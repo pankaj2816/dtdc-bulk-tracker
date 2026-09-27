@@ -13,9 +13,11 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
-import ddddocr
 import tempfile
+try:
+    import ddddocr
+except Exception:
+    ddddocr = None
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -27,12 +29,19 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('templates', exist_ok=True)
 os.makedirs('static', exist_ok=True)
 
-USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+_ocr_instance = None
 
-# Initialize OCR engine once at startup
-print("Initializing Automated Captcha OCR Engine...")
-ocr = ddddocr.DdddOcr(show_ad=False)
-print("OCR Engine Ready!")
+def get_ocr_engine():
+    global _ocr_instance
+    if _ocr_instance is None:
+        try:
+            import ddddocr
+            _ocr_instance = ddddocr.DdddOcr(show_ad=False)
+            print("OCR Engine Ready!", flush=True)
+        except Exception as e:
+            print("Warning: OCR Engine failed to initialize:", e, flush=True)
+    return _ocr_instance
+
 
 
 def fetch_dtdc_captcha():
@@ -76,7 +85,11 @@ def get_verified_token_auto(max_attempts=8):
         try:
             c = fetch_dtdc_captcha()
             img_bytes = base64.b64decode(c['image'])
-            pred = ocr.classification(img_bytes)
+            ocr_engine = get_ocr_engine()
+            if not ocr_engine:
+                print("OCR engine not available", flush=True)
+                break
+            pred = ocr_engine.classification(img_bytes)
             cleaned = pred.upper().replace(' ', '')
             
             # Validate with DTDC
