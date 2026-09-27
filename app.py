@@ -348,6 +348,13 @@ def health():
 @app.route('/api/index')
 @app.route('/api/index.py')
 def index():
+    if 'debug' in request.args:
+        return jsonify({
+            'path': request.path,
+            'environ': {k: str(v) for k, v in request.environ.items() if isinstance(v, (str, int, float, bool))},
+            'headers': dict(request.headers),
+            'args': dict(request.args)
+        })
     return render_template('index.html')
 
 
