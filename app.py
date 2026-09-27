@@ -19,15 +19,21 @@ try:
 except Exception:
     ddddocr = None
 
-app = Flask(__name__, template_folder='templates', static_folder='static')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(
+    __name__, 
+    template_folder=os.path.join(BASE_DIR, 'templates'), 
+    static_folder=os.path.join(BASE_DIR, 'static')
+)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 CORS(app)
 
 UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'dtdc_uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs('templates', exist_ok=True)
-os.makedirs('static', exist_ok=True)
+try:
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+except Exception:
+    pass
 
 _ocr_instance = None
 
@@ -324,6 +330,16 @@ def add_header(response):
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '-1'
     return response
+
+
+@app.route('/api/health')
+def health():
+    return jsonify({
+        'status': 'ok',
+        'app': 'DTDC Bulk Tracker',
+        'cwd': os.getcwd(),
+        'template_exists': os.path.exists(os.path.join(BASE_DIR, 'templates', 'index.html'))
+    })
 
 
 @app.route('/')
