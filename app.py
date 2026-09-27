@@ -28,11 +28,25 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 CORS(app)
 
+class VercelPathMiddleware:
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        matched = environ.get('HTTP_X_MATCHED_PATH')
+        if matched:
+            environ['PATH_INFO'] = matched
+        return self.wsgi_app(environ, start_response)
+
+app.wsgi_app = VercelPathMiddleware(app.wsgi_app)
+
 UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'dtdc_uploads')
 try:
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 except Exception:
     pass
+
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
 _ocr_instance = None
 
@@ -343,8 +357,6 @@ def health():
 
 @app.route('/')
 @app.route('/index')
-@app.route('/api/index')
-@app.route('/api/index.py')
 def index():
     return render_template('index.html')
 
