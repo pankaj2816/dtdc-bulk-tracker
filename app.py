@@ -28,18 +28,6 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 CORS(app)
 
-class VercelPathMiddleware:
-    def __init__(self, wsgi_app):
-        self.wsgi_app = wsgi_app
-
-    def __call__(self, environ, start_response):
-        matched = environ.get('HTTP_X_MATCHED_PATH')
-        if matched:
-            environ['PATH_INFO'] = matched
-        return self.wsgi_app(environ, start_response)
-
-app.wsgi_app = VercelPathMiddleware(app.wsgi_app)
-
 UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'dtdc_uploads')
 try:
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -357,8 +345,22 @@ def health():
 
 @app.route('/')
 @app.route('/index')
+@app.route('/api/index')
+@app.route('/api/index.py')
 def index():
     return render_template('index.html')
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    if not request.path.startswith('/api/'):
+        return render_template('index.html'), 200
+    return jsonify({
+        'error': 'Not found',
+        'path': request.path,
+        'PATH_INFO': request.environ.get('PATH_INFO'),
+        'x-matched-path': request.headers.get('x-matched-path')
+    }), 404
 
 
 @app.route('/api/captcha', methods=['GET'])
