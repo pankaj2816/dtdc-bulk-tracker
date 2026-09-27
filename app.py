@@ -438,7 +438,7 @@ def upload_excel():
                 c_str = str(cell).strip()
                 if re.match(r'^\d{2}\.\d{2}\.\d{2,4}$', c_str):
                     row_date = c_str
-                elif re.match(r'^[WDIP][0-9]{7,12}$', c_str, re.I):
+                elif re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', c_str, re.I):
                     row_dockets.append(c_str)
 
             if row_date:
@@ -579,7 +579,7 @@ def export_excel():
                         for cell in row[:10]:
                             if cell.value:
                                 val_str = str(cell.value).strip()
-                                if re.match(r'^[WDIP][0-9]{7,12}$', val_str, re.I):
+                                if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', val_str, re.I):
                                     row_docket = val_str.upper()
                                     docket_cell = cell
                                     break
