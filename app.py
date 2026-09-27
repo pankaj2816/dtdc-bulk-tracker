@@ -9,7 +9,6 @@ import urllib.parse
 from collections import defaultdict
 from flask import Flask, render_template, request, jsonify, send_file, Response
 from flask_cors import CORS
-import pandas as pd
 from bs4 import BeautifulSoup
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
