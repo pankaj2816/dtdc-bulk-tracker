@@ -15,15 +15,17 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import ddddocr
+import tempfile
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 CORS(app)
 
+UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'dtdc_uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('templates', exist_ok=True)
 os.makedirs('static', exist_ok=True)
-os.makedirs('uploads', exist_ok=True)
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
@@ -411,7 +413,7 @@ def upload_excel():
         return jsonify({'success': False, 'error': 'Please upload an Excel (.xlsx, .xls) or CSV file.'}), 400
 
     try:
-        temp_path = os.path.join('uploads', filename)
+        temp_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(temp_path)
 
         wb = openpyxl.load_workbook(temp_path, read_only=True)
@@ -532,10 +534,11 @@ def export_excel():
     status_map = {r['awb'].strip().upper(): r for r in results}
 
     if mode == 'merged':
-        original_files = [f for f in os.listdir('uploads') if 'daily entry' in f.lower() or 'autosaved' in f.lower()]
+        files_dir = UPLOAD_FOLDER if (os.path.exists(UPLOAD_FOLDER) and os.listdir(UPLOAD_FOLDER)) else 'uploads'
+        original_files = [f for f in os.listdir(files_dir) if 'daily entry' in f.lower() or 'autosaved' in f.lower()] if os.path.exists(files_dir) else []
         base_file = None
         if original_files:
-            base_file = os.path.join('uploads', original_files[-1])
+            base_file = os.path.join(files_dir, original_files[-1])
         elif os.path.exists("DAILY ENTRY 2026.xlsx"):
             base_file = "DAILY ENTRY 2026.xlsx"
 
@@ -607,7 +610,7 @@ def export_excel():
                             ws.cell(row=row_idx, column=act_col, value=info.get('latest_update', '-')).font = regular_font
                             ws.cell(row=row_idx, column=time_col, value=info.get('latest_time', '-')).font = regular_font
 
-                out_path = os.path.join('uploads', 'temp_merged_export.xlsx')
+                out_path = os.path.join(UPLOAD_FOLDER, 'temp_merged_export.xlsx')
                 wb.save(out_path)
                 wb.close()
                 print("Merge complete! Sending file...", flush=True)
