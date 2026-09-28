@@ -593,6 +593,11 @@
                     const cStr = String(cellVal).trim();
                     if (!cStr) continue;
 
+                    // Avoid "JAI SHREE SHYAM ..." banner text entirely from setting dates or matching
+                    if (cStr.toUpperCase().includes('SHYAM')) {
+                        continue;
+                    }
+
                     if (datePattern1.test(cStr) && isValidDateStr(cStr)) {
                         rowDate = cStr;
                     } else {
@@ -1381,12 +1386,20 @@
                                 docketCell.fill = fillDelivered;
                                 docketCell.font = fontDelivered;
                             }
-                        } else if (cat === 'Out for Delivery') {
-                            cStatus.fill = fillOfd;
-                        } else if (cat === 'In Transit') {
-                            cStatus.fill = fillTransit;
-                        } else if (cat === 'Issue/RTO') {
-                            cStatus.fill = fillIssue;
+                        } else {
+                            if (docketCell) {
+                                docketCell.fill = null;
+                                docketCell.font = regularFont;
+                            }
+                            if (cat === 'Out for Delivery') {
+                                cStatus.fill = fillOfd;
+                            } else if (cat === 'In Transit') {
+                                cStatus.fill = fillTransit;
+                            } else if (cat === 'Issue/RTO') {
+                                cStatus.fill = fillIssue;
+                            } else {
+                                cStatus.fill = null;
+                            }
                         }
 
                         const cEdd = row.getCell(eddCol);

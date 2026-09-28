@@ -315,16 +315,16 @@ def parse_dtdc_html(html_content, requested_numbers=None):
     # Categorize all parsed items
     for item in results:
         st_lower = item['status'].lower()
-        if 'delivered' in st_lower:
-            item['category'] = 'Delivered'
+        if any(k in st_lower for k in ['undelivered', 'not delivered', 'un-delivered', 'failed', 'cancelled', 'rto', 'return', 'exception']):
+            item['category'] = 'Issue/RTO'
         elif 'out for delivery' in st_lower:
             item['category'] = 'Out for Delivery'
+        elif re.search(r'\bdelivered\b', st_lower) or st_lower.startswith('delivered'):
+            item['category'] = 'Delivered'
         elif any(k in st_lower for k in ['in transit', 'dispatched', 'arrived', 'transit', 'reached', 'on the way']):
             item['category'] = 'In Transit'
         elif any(k in st_lower for k in ['booked', 'picked up', 'manifest']):
             item['category'] = 'Booked'
-        elif any(k in st_lower for k in ['undelivered', 'rto', 'return', 'failed', 'cancelled', 'exception']):
-            item['category'] = 'Issue/RTO'
         else:
             item['category'] = 'In Transit' if item['status'] else 'Not Found'
 
@@ -430,13 +430,13 @@ def track_trackon_consignments(numbers):
 
     def categorize_event(evt):
         u = evt.upper()
-        if 'DELIVERED' in u:
-            return 'Delivered', 'Delivered'
+        if any(k in u for k in ['UNDELIVERED', 'NOT DELIVERED', 'UN-DELIVERED', 'FAILED', 'CANCEL', 'DAMAGE', 'HOLD', 'REFUSED', 'REJECTED', 'RTO', 'RETURN']):
+            return 'Issue/RTO', f'Issue: {evt[:30]}'
         if any(k in u for k in ['OUT FOR DELIVERY', 'MANIFEST PREPARED']):
             return 'Out for Delivery', 'Out for Delivery'
-        if any(k in u for k in ['RTO', 'RETURN', 'CANCEL', 'DAMAGE', 'HOLD', 'UNDELIVERED', 'REFUSED', 'REJECTED']):
-            return 'Issue/RTO', f'Issue: {evt[:30]}'
-        if any(k in u for k in ['IN TRANSIT', 'DISPATCHED', 'VEHICLE OUT', 'PROCESSING', 'ARRIVED', 'BOOKED', 'PICKED UP']):
+        if 'DELIVERED' in u and not any(k in u for k in ['TO HUB', 'TO BRANCH', 'TO AIRPORT', 'BAG']):
+            return 'Delivered', 'Delivered'
+        if any(k in u for k in ['IN TRANSIT', 'DISPATCHED', 'VEHICLE OUT', 'PROCESSING', 'ARRIVED', 'BOOKED', 'PICKED UP', 'MANIFEST']):
             return 'In Transit', evt
         return 'In Transit', evt
 
@@ -728,6 +728,8 @@ def extract_sheet_dockets(wb, sheet_target, courier_type):
             if not cell:
                 continue
             c_str = str(cell).strip()
+            if 'SHYAM' in c_str.upper():
+                continue
             if re.match(r'^\d{1,2}[\.\/]\d{1,2}[\.\/]\d{2,4}$', c_str) and is_valid_date_str(c_str):
                 row_date = c_str
             elif re.search(r'\b(\d{1,2}\.\d{1,2}\.\d{2,4})\b', c_str):
@@ -962,16 +964,20 @@ def export_excel():
                                 if cat == 'Delivered':
                                     c_status.fill = fill_delivered
                                     c_status.font = font_delivered
-                                    # Highlight the docket number cell green when delivered!
+                                    # Highlight the docket number cell green only when delivered!
                                     if docket_cell is not None:
                                         docket_cell.fill = fill_delivered
                                         docket_cell.font = font_delivered
-                                elif cat == 'Out for Delivery':
-                                    c_status.fill = fill_ofd
-                                elif cat == 'In Transit':
-                                    c_status.fill = fill_transit
-                                elif cat == 'Issue/RTO':
-                                    c_status.fill = fill_issue
+                                else:
+                                    if docket_cell is not None:
+                                        docket_cell.fill = PatternFill(fill_type=None)
+                                        docket_cell.font = regular_font
+                                    if cat == 'Out for Delivery':
+                                        c_status.fill = fill_ofd
+                                    elif cat == 'In Transit':
+                                        c_status.fill = fill_transit
+                                    elif cat == 'Issue/RTO':
+                                        c_status.fill = fill_issue
 
                                 ws.cell(row=row_idx, column=edd_col, value=info.get('edd', '-')).font = regular_font
                                 ws.cell(row=row_idx, column=act_col, value=info.get('latest_update', '-')).font = regular_font
