@@ -168,6 +168,22 @@ def post_to_trackshipment(redirect_url, payload_d):
 
 def parse_dtdc_html(html_content, requested_numbers=None):
     """Parse DTDC HTML tracking page and extract structured tracking details."""
+    if not html_content or len(html_content.strip()) < 50:
+        if requested_numbers:
+            return [{
+                "awb": num,
+                "reference_no": "-",
+                "edd": "-",
+                "status": "DTDC Server Unavailable",
+                "status_type": "network_error",
+                "category": "Issue/RTO",
+                "origin": "-",
+                "destination": "-",
+                "latest_update": "Failed to receive response from DTDC server",
+                "latest_time": "-"
+            } for num in requested_numbers]
+        return []
+
     soup = BeautifulSoup(html_content, 'html.parser')
     results = []
 
@@ -419,12 +435,28 @@ def track_trackon_consignments(numbers):
         }
     )
 
-    try:
-        with urllib.request.urlopen(req, context=ctx, timeout=25) as resp:
-            html = resp.read().decode('utf-8', errors='ignore')
-    except Exception as e:
-        print(f"Trackon query error: {e}", flush=True)
-        html = ''
+    html = ''
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=25) as resp:
+                html = resp.read().decode('utf-8', errors='ignore')
+                if html:
+                    break
+        except Exception as e:
+            print(f"Trackon query error (attempt {attempt + 1}): {e}", flush=True)
+            time.sleep(1)
+
+    if not html:
+        return [{
+            'awb': num,
+            'category': 'Issue/RTO',
+            'status': 'Trackon Server Busy / Retry',
+            'edd': '-',
+            'origin': '-',
+            'destination': '-',
+            'latest_update': 'Could not connect to Trackon server after retries',
+            'latest_time': '-'
+        } for num in numbers]
 
     soup = BeautifulSoup(html, 'html.parser')
     results = []
@@ -620,27 +652,53 @@ def track_stream():
                 chunk = dtdc_nums[i:i + CHUNK_SIZE]
                 batch_num = (i // CHUNK_SIZE) + 1
 
-                yield f"data: {json.dumps({'type': 'status', 'message': f'Verifying DTDC security token for batch {batch_num} of {total_dtdc_batches}...', 'completed': completed, 'total': total})}\n\n"
+                chunk_results = []
+                max_retries = 3
+                for attempt in range(1, max_retries + 1):
+                    attempt_str = f" (attempt {attempt}/{max_retries})" if attempt > 1 else ""
+                    yield f"data: {json.dumps({'type': 'status', 'message': f'Verifying DTDC security token for batch {batch_num} of {total_dtdc_batches}{attempt_str}...', 'completed': completed, 'total': total})}\n\n"
 
-                token = get_verified_token_auto(max_attempts=8)
-                if not token:
-                    yield f"data: {json.dumps({'type': 'error', 'message': f'Could not verify security token for batch {batch_num}. Retrying...'})}\n\n"
                     token = get_verified_token_auto(max_attempts=8)
                     if not token:
-                        continue
+                        print(f"Batch {batch_num}: Security token failed on attempt {attempt}")
+                        if attempt < max_retries:
+                            time.sleep(1.0)
+                            continue
+                        else:
+                            break
 
-                yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking DTDC batch {batch_num} of {total_dtdc_batches} ({len(chunk)} parcels)...', 'completed': completed, 'total': total})}\n\n"
+                    yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking DTDC batch {batch_num} of {total_dtdc_batches} ({len(chunk)} parcels){attempt_str}...', 'completed': completed, 'total': total})}\n\n"
 
-                try:
-                    pull_res = pull_dtdc_details(chunk, token)
-                    if pull_res.get('success') and pull_res.get('redirect') and pull_res.get('payload'):
-                        html = post_to_trackshipment(pull_res['redirect'], pull_res['payload'])
-                        chunk_results = parse_dtdc_html(html, requested_numbers=chunk)
-                    else:
-                        chunk_results = parse_dtdc_html("", requested_numbers=chunk)
-                except Exception as e:
-                    print(f"Error tracking DTDC chunk: {e}")
-                    chunk_results = parse_dtdc_html("", requested_numbers=chunk)
+                    try:
+                        pull_res = pull_dtdc_details(chunk, token)
+                        if pull_res.get('success') and pull_res.get('redirect') and pull_res.get('payload'):
+                            html = post_to_trackshipment(pull_res['redirect'], pull_res['payload'])
+                            if html and len(html.strip()) > 500:
+                                chunk_results = parse_dtdc_html(html, requested_numbers=chunk)
+                                break
+                            else:
+                                print(f"Batch {batch_num}: Short/empty HTML returned from DTDC on attempt {attempt}")
+                        else:
+                            print(f"Batch {batch_num}: pull_dtdc_details failed on attempt {attempt}: {pull_res.get('message')}")
+                    except Exception as e:
+                        print(f"Batch {batch_num}: Error tracking DTDC chunk on attempt {attempt}: {e}")
+
+                    if attempt < max_retries:
+                        time.sleep(1.2)
+
+                if not chunk_results:
+                    chunk_results = [{
+                        "awb": n,
+                        "reference_no": "-",
+                        "edd": "-",
+                        "status": "DTDC Server Busy / Retry",
+                        "status_type": "network_error",
+                        "category": "Issue/RTO",
+                        "origin": "-",
+                        "destination": "-",
+                        "latest_update": "Could not connect to DTDC server after retries",
+                        "latest_time": "-"
+                    } for n in chunk]
 
                 for r in chunk_results:
                     r['courier'] = 'dtdc'
