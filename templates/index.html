@@ -1257,6 +1257,44 @@
             }
         }
 
+        async function saveBlobWithPicker(blob, suggestedName) {
+            // Check if File System Access API is supported (Chrome, Edge, Opera, etc.)
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: suggestedName,
+                        types: [{
+                            description: 'Excel Workbook (*.xlsx)',
+                            accept: {
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+                            }
+                        }]
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    return { success: true, savedAs: handle.name };
+                } catch (err) {
+                    // If user clicked cancel on the file picker dialog
+                    if (err.name === 'AbortError') {
+                        return { success: false, cancelled: true };
+                    }
+                    console.warn('showSaveFilePicker error, falling back to download:', err);
+                }
+            }
+
+            // Fallback for browsers that do not support showSaveFilePicker
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = suggestedName;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+            return { success: true, savedAs: suggestedName };
+        }
+
         async function mergeOriginalClientSide() {
             if (!originalFileArrayBuffer) {
                 showError('Original file not found in memory. Please upload your Excel file first.');
@@ -1425,18 +1463,22 @@
 
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'DAILY_ENTRY_2026_LIVE_STATUS.xlsx';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
+            const defaultFilename = originalFileName ? originalFileName.replace(/\.xlsx$/i, '_LIVE_STATUS.xlsx') : 'DAILY_ENTRY_2026_LIVE_STATUS.xlsx';
+
+            bannerText.innerText = '📁 Please select where to save your updated Excel file...';
+
+            const saveRes = await saveBlobWithPicker(blob, defaultFilename);
 
             spinner.classList.add('hidden');
+            if (saveRes.cancelled) {
+                banner.className = 'px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between';
+                bannerText.innerHTML = `<span><strong>Save cancelled.</strong> Your merged file is ready whenever you wish to save.</span>`;
+                setTimeout(() => banner.classList.add('hidden'), 5000);
+                return;
+            }
+
             banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
-            bannerText.innerHTML = `<span><strong>✅ Merge Complete!</strong> Updated ${totalMatched} consignments in sheets <code>${updatedSheetNames.join(', ')}</code>. All other sheets remain completely untouched. Delivered dockets highlighted in bold green.</span>`;
+            bannerText.innerHTML = `<span><strong>✅ Saved Successfully!</strong> Saved as <code>${saveRes.savedAs || defaultFilename}</code>. Updated ${totalMatched} consignments in sheets <code>${updatedSheetNames.join(', ')}</code>. Delivered dockets highlighted in bold green.</span>`;
             setTimeout(() => {
                 banner.classList.add('hidden');
             }, 8000);
@@ -1500,18 +1542,21 @@
                 }
 
                 const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = currentCourier === 'both' ? 'Combined_Tracking_Summary.xlsx' : (currentCourier === 'trackon' ? 'Trackon_Tracking_Summary.xlsx' : 'DTDC_Tracking_Summary.xlsx');
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
+                const defaultName = currentCourier === 'both' ? 'Combined_Tracking_Summary.xlsx' : (currentCourier === 'trackon' ? 'Trackon_Tracking_Summary.xlsx' : 'DTDC_Tracking_Summary.xlsx');
+                
+                bannerText.innerText = '📁 Please select where to save your summary Excel file...';
+                const saveRes = await saveBlobWithPicker(blob, defaultName);
 
                 spinner.classList.add('hidden');
+                if (saveRes.cancelled) {
+                    banner.className = 'px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between';
+                    bannerText.innerHTML = `<span><strong>Save cancelled.</strong></span>`;
+                    setTimeout(() => banner.classList.add('hidden'), 4000);
+                    return;
+                }
+
                 banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
-                bannerText.innerHTML = `<span><strong>✅ Download Complete!</strong> <code class="font-mono">${a.download}</code> has been downloaded.</span>`;
+                bannerText.innerHTML = `<span><strong>✅ Saved Successfully!</strong> <code class="font-mono">${saveRes.savedAs || defaultName}</code> has been saved.</span>`;
                 setTimeout(() => {
                     banner.classList.add('hidden');
                 }, 6000);
