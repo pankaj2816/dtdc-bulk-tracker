@@ -7,6 +7,9 @@
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- SheetJS & ExcelJS for ultra-fast, zero-upload local Excel parsing & styling -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -357,11 +360,38 @@
         let currentTab = 'excel';
         let currentCourier = 'dtdc'; // 'dtdc' or 'trackon'
         let parsedExcelData = null;
+        let originalFileArrayBuffer = null;
+        let originalFileName = '';
         let allResults = [];
         let activeFilter = 'all';
 
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('paste-input').addEventListener('input', updatePasteCount);
+
+            const dropZone = document.getElementById('drop-zone');
+            if (dropZone) {
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropZone.classList.add('border-dtdc-blue', 'bg-blue-50/50');
+                    }, false);
+                });
+                ['dragleave', 'drop'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropZone.classList.remove('border-dtdc-blue', 'bg-blue-50/50');
+                    }, false);
+                });
+                dropZone.addEventListener('drop', (e) => {
+                    const dt = e.dataTransfer;
+                    const files = dt && dt.files;
+                    if (files && files.length > 0) {
+                        processSelectedFile(files[0]);
+                    }
+                }, false);
+            }
         });
 
         function setCourier(courier) {
@@ -448,8 +478,145 @@
             updatePasteCount();
         }
 
+        function parseSheetDockets(sheet, courierType, sheetName) {
+            if (!sheet) return null;
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+            if (!rows || rows.length === 0) return null;
+
+            const dateDockets = {};
+            const allDockets = [];
+            const docketSet = new Set();
+            let currDate = "Unknown";
+
+            const datePattern1 = /^\d{2}[\.\/]\d{2}[\.\/]\d{2,4}$/;
+            const datePattern2 = /\b(\d{2}\.\d{2}\.\d{2,4})\b/;
+            const dtdcPattern = /^[A-Za-z]{1,4}[0-9]{6,12}$/;
+            const trackonPattern = /^[0-9]{10,12}$/;
+
+            for (let r = 0; r < rows.length; r++) {
+                const row = rows[r];
+                if (!row || !Array.isArray(row)) continue;
+                let rowDate = null;
+                const rowDockets = [];
+
+                for (let c = 0; c < row.length; c++) {
+                    const cellVal = row[c];
+                    if (cellVal === null || cellVal === undefined) continue;
+                    const cStr = String(cellVal).trim();
+                    if (!cStr) continue;
+
+                    if (datePattern1.test(cStr)) {
+                        rowDate = cStr;
+                    } else {
+                        const m = cStr.match(datePattern2);
+                        if (m) {
+                            rowDate = m[1];
+                        }
+                    }
+
+                    if (courierType === 'dtdc') {
+                        if (dtdcPattern.test(cStr)) {
+                            rowDockets.push(cStr.toUpperCase());
+                        }
+                    } else {
+                        if (trackonPattern.test(cStr)) {
+                            rowDockets.push(cStr);
+                        }
+                    }
+                }
+
+                if (rowDate) {
+                    currDate = rowDate;
+                }
+
+                for (const d of rowDockets) {
+                    if (!docketSet.has(d)) {
+                        docketSet.add(d);
+                        allDockets.push(d);
+                    }
+                    if (!dateDockets[currDate]) {
+                        dateDockets[currDate] = [];
+                    }
+                    if (!dateDockets[currDate].includes(d)) {
+                        dateDockets[currDate].push(d);
+                    }
+                }
+            }
+
+            const validDates = Object.keys(dateDockets).filter(d => d !== "Unknown");
+            const latestDate = validDates.length > 0 ? validDates[validDates.length - 1] : null;
+
+            const dateOptions = [];
+            if (latestDate) {
+                dateOptions.push({
+                    label: `Latest Date: ${latestDate} (${dateDockets[latestDate].length} dockets)`,
+                    value: latestDate,
+                    count: dateDockets[latestDate].length,
+                    numbers: dateDockets[latestDate]
+                });
+            }
+
+            if (validDates.length >= 2) {
+                const last3 = validDates.slice(-3);
+                const comb3 = [];
+                for (const d of last3) {
+                    comb3.push(...dateDockets[d]);
+                }
+                dateOptions.push({
+                    label: `Last 3 Days (${comb3.length} dockets)`,
+                    value: 'last_3',
+                    count: comb3.length,
+                    numbers: comb3
+                });
+            }
+
+            if (validDates.length >= 4) {
+                const last7 = validDates.slice(-7);
+                const comb7 = [];
+                for (const d of last7) {
+                    comb7.push(...dateDockets[d]);
+                }
+                dateOptions.push({
+                    label: `Last 7 Days (${comb7.length} dockets)`,
+                    value: 'last_7',
+                    count: comb7.length,
+                    numbers: comb7
+                });
+            }
+
+            const reversedDates = validDates.slice(-7).reverse();
+            for (const d of reversedDates) {
+                if (d !== latestDate) {
+                    dateOptions.push({
+                        label: `Date ${d} (${dateDockets[d].length} dockets)`,
+                        value: d,
+                        count: dateDockets[d].length,
+                        numbers: dateDockets[d]
+                    });
+                }
+            }
+
+            const defaultNumbers = dateOptions.length > 0 ? dateOptions[0].numbers : allDockets.slice(0, 50);
+
+            return {
+                sheet: sheetName,
+                total_dockets: allDockets.length,
+                latest_date: latestDate,
+                date_options: dateOptions,
+                numbers: defaultNumbers,
+                count: defaultNumbers.length,
+                all_numbers: allDockets
+            };
+        }
+
         function handleFileSelect(e) {
-            const file = e.target.files[0];
+            const file = e.target.files && e.target.files[0];
+            if (file) {
+                processSelectedFile(file);
+            }
+        }
+
+        function processSelectedFile(file) {
             if (!file) return;
 
             const dropZone = document.getElementById('drop-zone');
@@ -465,78 +632,141 @@
             hideError();
             fileInfoBox.classList.add('hidden');
             uploadBox.classList.remove('hidden');
-            uploadBarFill.style.width = '0%';
-            uploadPercentText.innerText = '0%';
-            uploadLabel.innerText = 'Uploading file...';
+            uploadBarFill.style.width = '20%';
+            uploadPercentText.innerText = '20%';
+            uploadLabel.innerText = 'Reading file into memory (Zero Upload)...';
             uploadFilenameText.innerText = file.name;
 
             const totalMB = (file.size / (1024 * 1024)).toFixed(2);
             uploadSizeText.innerText = `0.00 MB / ${totalMB} MB`;
-
             dropZone.classList.add('opacity-50', 'pointer-events-none');
 
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('courier', currentCourier);
-
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/api/upload-excel', true);
-
-            xhr.upload.onprogress = function(event) {
-                if (event.lengthComputable) {
-                    const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
-                    const loadedMB = (event.loaded / (1024 * 1024)).toFixed(2);
+            const reader = new FileReader();
+            reader.onprogress = function(evt) {
+                if (evt.lengthComputable) {
+                    const percent = Math.min(65, Math.round((evt.loaded / evt.total) * 65));
+                    const loadedMB = (evt.loaded / (1024 * 1024)).toFixed(2);
                     uploadBarFill.style.width = percent + '%';
                     uploadPercentText.innerText = percent + '%';
                     uploadSizeText.innerText = `${loadedMB} MB / ${totalMB} MB`;
-
-                    if (percent >= 100) {
-                        uploadLabel.innerText = 'Upload complete! Reading sheets & analyzing dockets...';
-                    }
                 }
             };
 
-            xhr.onload = function() {
-                dropZone.classList.remove('opacity-50', 'pointer-events-none');
-                if (xhr.status === 200) {
-                    try {
-                        const data = JSON.parse(xhr.responseText);
-                        if (!data.success) {
-                            uploadBox.classList.add('hidden');
-                            showError(data.error || 'Failed to parse Excel file.');
-                            return;
-                        }
+            reader.onload = async function(evt) {
+                try {
+                    originalFileArrayBuffer = evt.target.result;
+                    originalFileName = file.name;
 
-                        uploadBox.classList.add('hidden');
-                        parsedExcelData = data;
-                        document.getElementById('file-name-display').innerText = data.filename;
-                        
-                        if (data.active_courier && data.active_courier !== currentCourier) {
-                            setCourier(data.active_courier);
+                    uploadLabel.innerText = 'Analyzing sheets (MIA-2 & TRACKON)...';
+                    uploadBarFill.style.width = '85%';
+                    uploadPercentText.innerText = '85%';
+                    uploadSizeText.innerText = `${totalMB} MB / ${totalMB} MB`;
+
+                    await new Promise(r => setTimeout(r, 60));
+
+                    const wb = XLSX.read(new Uint8Array(originalFileArrayBuffer), { type: 'array' });
+
+                    let dtdcSheet = null;
+                    let dtdcSheetName = null;
+                    let trackonSheet = null;
+                    let trackonSheetName = null;
+
+                    for (const name of wb.SheetNames) {
+                        const clean = name.trim().toUpperCase();
+                        if (!dtdcSheet && clean === 'MIA-2') {
+                            dtdcSheet = wb.Sheets[name];
+                            dtdcSheetName = name;
+                        }
+                        if (!trackonSheet && clean === 'TRACKON') {
+                            trackonSheet = wb.Sheets[name];
+                            trackonSheetName = name;
+                        }
+                    }
+
+                    if (!dtdcSheet) {
+                        for (const name of wb.SheetNames) {
+                            if (name.trim().toUpperCase().includes('MIA-2')) {
+                                dtdcSheet = wb.Sheets[name];
+                                dtdcSheetName = name;
+                                break;
+                            }
+                        }
+                    }
+                    if (!trackonSheet) {
+                        for (const name of wb.SheetNames) {
+                            if (name.trim().toUpperCase().includes('TRACKON')) {
+                                trackonSheet = wb.Sheets[name];
+                                trackonSheetName = name;
+                                break;
+                            }
+                        }
+                    }
+
+                    const dtdcData = dtdcSheet ? parseSheetDockets(dtdcSheet, 'dtdc', dtdcSheetName) : null;
+                    const trackonData = trackonSheet ? parseSheetDockets(trackonSheet, 'trackon', trackonSheetName) : null;
+
+                    if (!dtdcData && !trackonData) {
+                        const firstSheetName = wb.SheetNames[0];
+                        const firstSheet = wb.Sheets[firstSheetName];
+                        const fallbackData = parseSheetDockets(firstSheet, currentCourier, firstSheetName);
+                        if (!fallbackData || fallbackData.total_dockets === 0) {
+                            throw new Error('No consignment serial numbers found. Expected sheet "MIA-2" or "TRACKON".');
+                        }
+                        if (currentCourier === 'trackon') {
+                            trackonData = fallbackData;
                         } else {
-                            const cData = (data.couriers && data.couriers[currentCourier]) ? data.couriers[currentCourier] : data;
-                            updateCourierDateSelector(cData);
+                            dtdcData = fallbackData;
                         }
-
-                        fileInfoBox.classList.remove('hidden');
-                    } catch (e) {
-                        uploadBox.classList.add('hidden');
-                        showError('Invalid server response: ' + e.message);
                     }
-                } else {
+
+                    let activeCourier = currentCourier;
+                    if (currentCourier === 'trackon') {
+                        if (!trackonData && dtdcData) activeCourier = 'dtdc';
+                    } else {
+                        if (!dtdcData && trackonData) activeCourier = 'trackon';
+                    }
+
+                    parsedExcelData = {
+                        success: true,
+                        filename: file.name,
+                        active_courier: activeCourier,
+                        couriers: {
+                            dtdc: dtdcData,
+                            trackon: trackonData
+                        }
+                    };
+
+                    uploadBarFill.style.width = '100%';
+                    uploadPercentText.innerText = '100%';
                     uploadBox.classList.add('hidden');
-                    showError(`Upload failed with status ${xhr.status}: ${xhr.statusText}`);
+                    dropZone.classList.remove('opacity-50', 'pointer-events-none');
+
+                    document.getElementById('file-name-display').innerText = file.name;
+
+                    if (activeCourier !== currentCourier) {
+                        setCourier(activeCourier);
+                    } else {
+                        const cData = parsedExcelData.couriers[currentCourier] || dtdcData || trackonData;
+                        updateCourierDateSelector(cData);
+                    }
+
+                    fileInfoBox.classList.remove('hidden');
+                } catch (err) {
+                    uploadBox.classList.add('hidden');
+                    dropZone.classList.remove('opacity-50', 'pointer-events-none');
+                    showError('Failed to parse Excel file locally: ' + err.message);
                 }
             };
 
-            xhr.onerror = function() {
-                dropZone.classList.remove('opacity-50', 'pointer-events-none');
+            reader.onerror = function() {
                 uploadBox.classList.add('hidden');
-                showError('Network error occurred while uploading the file.');
+                dropZone.classList.remove('opacity-50', 'pointer-events-none');
+                showError('Error reading file from disk.');
             };
 
-            xhr.send(formData);
+            reader.readAsArrayBuffer(file);
         }
+
 
         function changeDateSelection() {
             if (!parsedExcelData) return;
@@ -776,6 +1006,11 @@
                     iconClass = "bi-exclamation-triangle-fill text-rose-500";
                 }
 
+                const trackUrl = currentCourier === 'trackon'
+                    ? 'https://trackon.in/courier-tracking-Multi'
+                    : `https://www.dtdc.com/track-your-shipment/?awb=${encodeURIComponent(r.awb)}`;
+                const trackTitle = currentCourier === 'trackon' ? 'Open Trackon Website' : 'Open on DTDC website';
+
                 tr.innerHTML = `
                     <td class="py-3 px-4 text-center font-mono text-slate-400">${idx + 1}</td>
                     <td class="py-3 px-4">
@@ -800,8 +1035,8 @@
                         <div class="text-[11px] text-slate-400">${r.latest_time || ''}</div>
                     </td>
                     <td class="py-3 px-4 text-center">
-                        <a href="https://www.dtdc.com/track-your-shipment/?awb=${encodeURIComponent(r.awb)}" target="_blank" 
-                           class="w-7 h-7 inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-dtdc-blue hover:text-white text-slate-600 transition" title="Open on DTDC website">
+                        <a href="${trackUrl}" target="_blank" 
+                           class="w-7 h-7 inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-dtdc-blue hover:text-white text-slate-600 transition" title="${trackTitle}">
                             <i class="bi bi-box-arrow-up-right text-xs"></i>
                         </a>
                     </td>
@@ -817,6 +1052,168 @@
             }
         }
 
+        async function mergeOriginalClientSide() {
+            if (!originalFileArrayBuffer) {
+                showError('Original file not found in memory. Please upload your Excel file first.');
+                return;
+            }
+
+            const banner = document.getElementById('export-status-banner');
+            const bannerText = document.getElementById('export-status-text');
+            const spinner = document.getElementById('export-spinner');
+
+            banner.className = 'px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between';
+            banner.classList.remove('hidden');
+            spinner.classList.remove('hidden');
+            bannerText.innerText = '⏳ Initializing client-side ExcelJS engine (all 19 sheets)...';
+
+            await new Promise(r => setTimeout(r, 60));
+
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(originalFileArrayBuffer);
+
+            const targetSheetName = currentCourier === 'trackon' ? 'TRACKON' : 'MIA-2';
+            let ws = workbook.getWorksheet(targetSheetName);
+            if (!ws) {
+                ws = workbook.worksheets.find(s => s.name.trim().toUpperCase().includes(targetSheetName));
+            }
+
+            if (!ws) {
+                throw new Error(`Target sheet "${targetSheetName}" not found in workbook.`);
+            }
+
+            bannerText.innerText = `⏳ Merging live tracking status into sheet "${ws.name}"...`;
+            await new Promise(r => setTimeout(r, 60));
+
+            const statusMap = {};
+            allResults.forEach(r => {
+                if (r.awb) {
+                    statusMap[String(r.awb).trim().toUpperCase()] = r;
+                }
+            });
+
+            const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A365D' } };
+            const headerFont = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+            const statusFont = { name: 'Calibri', size: 10, bold: true };
+            const regularFont = { name: 'Calibri', size: 10 };
+
+            const fillDelivered = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } };
+            const fontDelivered = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF006100' } };
+            const fillTransit = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0F2FE' } };
+            const fillOfd = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+            const fillIssue = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+
+            const statusCol = 11;
+            const eddCol = 12;
+            const actCol = 13;
+            const timeCol = 14;
+
+            const hStatus = ws.getCell(1, statusCol);
+            hStatus.value = 'Live Status';
+            hStatus.fill = headerFill;
+            hStatus.font = headerFont;
+
+            const hEdd = ws.getCell(1, eddCol);
+            hEdd.value = 'EDD';
+            hEdd.fill = headerFill;
+            hEdd.font = headerFont;
+
+            const hAct = ws.getCell(1, actCol);
+            hAct.value = 'Latest Activity';
+            hAct.fill = headerFill;
+            hAct.font = headerFont;
+
+            const hTime = ws.getCell(1, timeCol);
+            hTime.value = 'Activity Date/Time';
+            hTime.fill = headerFill;
+            hTime.font = headerFont;
+
+            let matchedCount = 0;
+
+            ws.eachRow((row, rowNumber) => {
+                if (rowNumber === 1) return;
+                let rowDocket = null;
+                let docketCell = null;
+
+                for (let colIdx = 1; colIdx <= 10; colIdx++) {
+                    const cell = row.getCell(colIdx);
+                    if (cell && cell.value !== null && cell.value !== undefined) {
+                        const valStr = String(cell.value).trim();
+                        if (currentCourier === 'trackon') {
+                            if (/^[0-9]{10,12}$/.test(valStr)) {
+                                rowDocket = valStr;
+                                docketCell = cell;
+                                break;
+                            }
+                        } else {
+                            if (/^[A-Za-z]{1,4}[0-9]{6,12}$/i.test(valStr)) {
+                                rowDocket = valStr.toUpperCase();
+                                docketCell = cell;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (rowDocket && statusMap[rowDocket]) {
+                    matchedCount++;
+                    const info = statusMap[rowDocket];
+                    const cStatus = row.getCell(statusCol);
+                    cStatus.value = info.status || '';
+                    cStatus.font = statusFont;
+
+                    const cat = info.category || '';
+                    if (cat === 'Delivered') {
+                        cStatus.fill = fillDelivered;
+                        cStatus.font = fontDelivered;
+                        if (docketCell) {
+                            docketCell.fill = fillDelivered;
+                            docketCell.font = fontDelivered;
+                        }
+                    } else if (cat === 'Out for Delivery') {
+                        cStatus.fill = fillOfd;
+                    } else if (cat === 'In Transit') {
+                        cStatus.fill = fillTransit;
+                    } else if (cat === 'Issue/RTO') {
+                        cStatus.fill = fillIssue;
+                    }
+
+                    const cEdd = row.getCell(eddCol);
+                    cEdd.value = info.edd || '-';
+                    cEdd.font = regularFont;
+
+                    const cAct = row.getCell(actCol);
+                    cAct.value = info.latest_update || '-';
+                    cAct.font = regularFont;
+
+                    const cTime = row.getCell(timeCol);
+                    cTime.value = info.latest_time || '-';
+                    cTime.font = regularFont;
+                }
+            });
+
+            bannerText.innerText = `⏳ Generating final updated Excel file (${matchedCount} consignments merged)...`;
+            await new Promise(r => setTimeout(r, 60));
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'DAILY_ENTRY_2026_LIVE_STATUS.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+
+            spinner.classList.add('hidden');
+            banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
+            bannerText.innerHTML = `<span><strong>✅ Merge Complete!</strong> Updated ${matchedCount} consignments in sheet <code>${ws.name}</code>. Delivered dockets highlighted in green.</span>`;
+            setTimeout(() => {
+                banner.classList.add('hidden');
+            }, 8000);
+        }
+
         async function exportToExcel(mode = 'summary') {
             if (!allResults || allResults.length === 0) {
                 alert('No tracking results to export.');
@@ -829,23 +1226,38 @@
             const bannerText = document.getElementById('export-status-text');
             const spinner = document.getElementById('export-spinner');
 
-            // Disable buttons during generation
-            btnSummary.disabled = true;
-            btnMerged.disabled = true;
-            btnSummary.classList.add('opacity-75', 'cursor-not-allowed');
-            btnMerged.classList.add('opacity-75', 'cursor-not-allowed');
-
             if (mode === 'merged') {
-                document.getElementById('btn-export-merged-text').innerText = 'Merging (~30s)...';
-                banner.className = 'px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between';
-                spinner.classList.remove('hidden');
-                bannerText.innerText = '⏳ Merging live statuses into your 6.4 MB original workbook (19 sheets, 23,000+ rows)... This takes ~30-40 seconds. Your download will start automatically!';
-            } else {
-                document.getElementById('btn-export-summary-text').innerText = 'Generating...';
-                banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
-                spinner.classList.remove('hidden');
-                bannerText.innerText = '⚡ Generating instant tracking report spreadsheet...';
+                if (!originalFileArrayBuffer) {
+                    alert('Please upload your Excel file first before merging, or click "Export Summary (.xlsx)" for a standalone tracking spreadsheet.');
+                    return;
+                }
+
+                btnMerged.disabled = true;
+                btnMerged.classList.add('opacity-75', 'cursor-not-allowed');
+                document.getElementById('btn-export-merged-text').innerText = 'Merging...';
+
+                try {
+                    await mergeOriginalClientSide();
+                } catch (err) {
+                    spinner.classList.add('hidden');
+                    banner.className = 'px-4 py-2.5 bg-rose-50 border-b border-rose-200 text-xs text-rose-900 flex items-center justify-between';
+                    bannerText.innerText = `❌ Merge error: ${err.message}`;
+                } finally {
+                    btnMerged.disabled = false;
+                    btnMerged.classList.remove('opacity-75', 'cursor-not-allowed');
+                    document.getElementById('btn-export-merged-text').innerText = 'Merge Original (.xlsx)';
+                }
+                return;
             }
+
+            // Standalone summary export
+            btnSummary.disabled = true;
+            btnSummary.classList.add('opacity-75', 'cursor-not-allowed');
+            document.getElementById('btn-export-summary-text').innerText = 'Generating...';
+            banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
+            banner.classList.remove('hidden');
+            spinner.classList.remove('hidden');
+            bannerText.innerText = '⚡ Generating instant tracking report spreadsheet...';
 
             try {
                 const res = await fetch('/api/export-excel', {
@@ -863,13 +1275,12 @@
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = mode === 'merged' ? 'DAILY_ENTRY_2026_LIVE_STATUS.xlsx' : (currentCourier === 'trackon' ? 'Trackon_Tracking_Summary.xlsx' : 'DTDC_Tracking_Summary.xlsx');
+                a.download = currentCourier === 'trackon' ? 'Trackon_Tracking_Summary.xlsx' : 'DTDC_Tracking_Summary.xlsx';
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
                 window.URL.revokeObjectURL(url);
 
-                // Success notification
                 spinner.classList.add('hidden');
                 banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
                 bannerText.innerHTML = `<span><strong>✅ Download Complete!</strong> <code class="font-mono">${a.download}</code> has been downloaded.</span>`;
@@ -883,11 +1294,8 @@
                 bannerText.innerText = `❌ Export error: ${err.message}`;
             } finally {
                 btnSummary.disabled = false;
-                btnMerged.disabled = false;
                 btnSummary.classList.remove('opacity-75', 'cursor-not-allowed');
-                btnMerged.classList.remove('opacity-75', 'cursor-not-allowed');
                 document.getElementById('btn-export-summary-text').innerText = 'Export Summary (.xlsx)';
-                document.getElementById('btn-export-merged-text').innerText = 'Merge Original (.xlsx)';
             }
         }
     </script>
