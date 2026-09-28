@@ -319,8 +319,8 @@
                     <div class="flex flex-wrap items-center gap-2">
                         <div class="relative">
                             <i class="bi bi-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                            <input type="text" id="table-search" oninput="applyFilters()" placeholder="Filter results..." 
-                                   class="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-dtdc-blue w-36">
+                            <input type="text" id="table-search" oninput="applyFilters()" placeholder="Filter dockets, status, city..." 
+                                   class="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-dtdc-blue w-44 sm:w-60">
                         </div>
 
                         <!-- Button 1: Instant Summary (.xlsx) -->
@@ -359,7 +359,7 @@
                                 <th class="py-3 px-4">EDD</th>
                                 <th class="py-3 px-4">Route (Origin &rarr; Dest)</th>
                                 <th class="py-3 px-4">Latest Activity</th>
-                                <th class="py-3 px-4 text-center">Link</th>
+                                <th class="py-3 px-4 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody id="results-tbody" class="divide-y divide-slate-200 font-normal">
@@ -375,6 +375,61 @@
         </div>
 
     </main>
+
+    <!-- Consignment Detail Modal -->
+    <div id="detail-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
+            <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div class="flex items-center gap-2">
+                    <span id="modal-courier-badge"></span>
+                    <h3 class="text-base font-bold text-slate-900 font-mono" id="modal-awb">AWB</h3>
+                </div>
+                <button onclick="closeDetailModal()" class="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center transition">
+                    <i class="bi bi-x-lg text-sm"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4 text-sm">
+                <!-- Status Row -->
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <span class="text-slate-500 text-xs font-medium uppercase tracking-wider">Live Status</span>
+                    <div id="modal-status-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"></div>
+                </div>
+                <!-- Route & EDD Grid -->
+                <div class="grid grid-cols-2 gap-3 pb-3 border-b border-slate-100 text-xs">
+                    <div>
+                        <span class="text-slate-400 font-medium uppercase tracking-wider block">Origin</span>
+                        <span id="modal-origin" class="font-semibold text-slate-800 text-sm block mt-0.5">-</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 font-medium uppercase tracking-wider block">Destination</span>
+                        <span id="modal-dest" class="font-semibold text-slate-800 text-sm block mt-0.5">-</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 font-medium uppercase tracking-wider block">Estimated Delivery</span>
+                        <span id="modal-edd" class="font-semibold text-slate-800 text-sm block mt-0.5">-</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 font-medium uppercase tracking-wider block">Activity Timestamp</span>
+                        <span id="modal-time" class="font-semibold text-slate-800 text-sm block mt-0.5">-</span>
+                    </div>
+                </div>
+                <!-- Latest Activity Box -->
+                <div>
+                    <span class="text-slate-400 text-xs font-medium uppercase tracking-wider block mb-1">Latest Activity / Remarks</span>
+                    <div id="modal-activity" class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs font-mono leading-relaxed break-words whitespace-pre-wrap"></div>
+                </div>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                <a id="modal-portal-link" href="#" target="_blank" class="px-4 py-2 bg-dtdc-blue hover:bg-dtdc-navy text-white text-xs font-semibold rounded-lg shadow transition flex items-center gap-1.5">
+                    <span>Open on Carrier Portal</span>
+                    <i class="bi bi-box-arrow-up-right text-[10px]"></i>
+                </a>
+                <button onclick="closeDetailModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Footer -->
     <footer class="bg-white border-t border-slate-200 text-slate-500 text-xs py-4 text-center">
@@ -1235,11 +1290,11 @@
                     <td class="py-3 px-4 text-center font-mono text-slate-400">${idx + 1}</td>
                     <td class="py-3 px-4">${courierBadge}</td>
                     <td class="py-3 px-4">
-                        <div class="font-bold font-mono text-slate-900">${r.awb}</div>
+                        <div onclick="showDetailModal(${idx})" class="font-bold font-mono text-slate-900 cursor-pointer hover:text-dtdc-blue transition" title="Click to view full details">${r.awb}</div>
                         ${r.reference_no && r.reference_no !== '-' ? `<div class="text-[11px] text-slate-400">Ref: ${r.reference_no}</div>` : ''}
                     </td>
                     <td class="py-3 px-4">
-                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${badgeClass}">
+                        <div onclick="showDetailModal(${idx})" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${badgeClass} cursor-pointer hover:opacity-85 transition" title="Click to view full details">
                             <i class="bi ${iconClass}"></i>
                             <span>${r.status}</span>
                         </div>
@@ -1251,15 +1306,20 @@
                         <div class="text-slate-800 font-medium">${r.destination || '-'}</div>
                         <div class="text-[11px] text-slate-400">From: ${r.origin || '-'}</div>
                     </td>
-                    <td class="py-3 px-4 max-w-xs">
-                        <div class="text-slate-800 truncate" title="${r.latest_update}">${r.latest_update || '-'}</div>
+                    <td class="py-3 px-4 max-w-xs cursor-pointer group" onclick="showDetailModal(${idx})" title="Click to view full remarks">
+                        <div class="text-slate-800 truncate group-hover:text-dtdc-blue transition">${r.latest_update || '-'}</div>
                         <div class="text-[11px] text-slate-400">${r.latest_time || ''}</div>
                     </td>
                     <td class="py-3 px-4 text-center">
-                        <a href="${trackUrl}" target="_blank" 
-                           class="w-7 h-7 inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-dtdc-blue hover:text-white text-slate-600 transition" title="${trackTitle}">
-                            <i class="bi bi-box-arrow-up-right text-xs"></i>
-                        </a>
+                        <div class="flex items-center justify-center gap-1.5">
+                            <button onclick="showDetailModal(${idx})" class="w-7 h-7 inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition" title="Inspect Full Details">
+                                <i class="bi bi-eye text-xs"></i>
+                            </button>
+                            <a href="${trackUrl}" target="_blank" 
+                               class="w-7 h-7 inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-dtdc-blue hover:text-white text-slate-600 transition" title="${trackTitle}">
+                                <i class="bi bi-box-arrow-up-right text-xs"></i>
+                            </a>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -1271,6 +1331,45 @@
             } else {
                 emptyState.classList.add('hidden');
             }
+        }
+
+        function showDetailModal(idx) {
+            const item = allResults[idx];
+            if (!item) return;
+            const isTrackonItem = (item.courier === 'trackon') || (item.sheet === 'TRACKON') || (/^[0-9]{10,12}$/.test(item.awb));
+            document.getElementById('modal-awb').innerText = item.awb;
+            document.getElementById('modal-origin').innerText = item.origin || '-';
+            document.getElementById('modal-dest').innerText = item.destination || '-';
+            document.getElementById('modal-edd').innerText = item.edd || '-';
+            document.getElementById('modal-time').innerText = item.latest_time || '-';
+            document.getElementById('modal-activity').innerText = item.latest_update || 'No detailed remarks available.';
+            
+            const badgeEl = document.getElementById('modal-status-badge');
+            badgeEl.innerText = item.status || item.category;
+            if (item.category === 'Delivered') {
+                badgeEl.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300";
+            } else if (item.category === 'Out for Delivery') {
+                badgeEl.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300";
+            } else if (item.category === 'In Transit') {
+                badgeEl.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-300";
+            } else {
+                badgeEl.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 border border-rose-300";
+            }
+
+            const courierBadge = document.getElementById('modal-courier-badge');
+            if (isTrackonItem) {
+                courierBadge.innerHTML = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">📦 TRACKON</span>`;
+                document.getElementById('modal-portal-link').href = 'https://trackon.in/courier-tracking-Multi';
+            } else {
+                courierBadge.innerHTML = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300">🚚 MIA-2</span>`;
+                document.getElementById('modal-portal-link').href = `https://www.dtdc.com/track-your-shipment/?awb=${encodeURIComponent(item.awb)}`;
+            }
+
+            document.getElementById('detail-modal').classList.remove('hidden');
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
         }
 
         async function saveBlobWithPicker(blob, suggestedName) {
@@ -1398,6 +1497,12 @@
                 hTime.fill = headerFill;
                 hTime.font = headerFont;
 
+                // Ensure newly created columns have professional widths
+                ws.getColumn(statusCol).width = 22;
+                ws.getColumn(eddCol).width = 15;
+                ws.getColumn(actCol).width = 42;
+                ws.getColumn(timeCol).width = 20;
+
                 let sheetMatched = 0;
 
                 ws.eachRow((row, rowNumber) => {
@@ -1449,7 +1554,7 @@
                                 cStatus.fill = fillOfd;
                             } else if (cat === 'In Transit') {
                                 cStatus.fill = fillTransit;
-                            } else if (cat === 'Issue/RTO') {
+                            } else if (cat === 'Issue/RTO' || cat === 'Not Found') {
                                 cStatus.fill = fillIssue;
                             } else {
                                 cStatus.fill = null;

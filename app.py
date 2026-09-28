@@ -433,7 +433,7 @@ def track_trackon_consignments(numbers):
         u = evt.upper()
         if any(k in u for k in ['UNDELIVERED', 'NOT DELIVERED', 'UN-DELIVERED', 'FAILED', 'CANCEL', 'DAMAGE', 'HOLD', 'REFUSED', 'REJECTED', 'RTO', 'RETURN']):
             return 'Issue/RTO', f'Issue: {evt[:30]}'
-        if any(k in u for k in ['OUT FOR DELIVERY', 'MANIFEST PREPARED']):
+        if any(k in u for k in ['OUT FOR DELIVERY', 'OUT FOR DELV', 'RUNSHEET GENERATED', 'OUT FOR RUNSHEET']):
             return 'Out for Delivery', 'Out for Delivery'
         if 'DELIVERED' in u and not any(k in u for k in ['TO HUB', 'TO BRANCH', 'TO AIRPORT', 'BAG']):
             return 'Delivered', 'Delivered'
