@@ -12,6 +12,7 @@ from flask_cors import CORS
 from bs4 import BeautifulSoup
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 import tempfile
 try:
     import ddddocr
