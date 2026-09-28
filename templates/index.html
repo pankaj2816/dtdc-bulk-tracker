@@ -1372,45 +1372,7 @@
             document.getElementById('detail-modal').classList.add('hidden');
         }
 
-        async function saveBlobWithPicker(blob, suggestedName) {
-            // Check if File System Access API is supported (Chrome, Edge, Opera, etc.)
-            if ('showSaveFilePicker' in window) {
-                try {
-                    const handle = await window.showSaveFilePicker({
-                        suggestedName: suggestedName,
-                        types: [{
-                            description: 'Excel Workbook (*.xlsx)',
-                            accept: {
-                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
-                            }
-                        }]
-                    });
-                    const writable = await handle.createWritable();
-                    await writable.write(blob);
-                    await writable.close();
-                    return { success: true, savedAs: handle.name };
-                } catch (err) {
-                    // If user clicked cancel on the file picker dialog
-                    if (err.name === 'AbortError') {
-                        return { success: false, cancelled: true };
-                    }
-                    console.warn('showSaveFilePicker error, falling back to download:', err);
-                }
-            }
-
-            // Fallback for browsers that do not support showSaveFilePicker
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = suggestedName;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-            return { success: true, savedAs: suggestedName };
-        }
-
-        async function mergeOriginalClientSide() {
+        async function mergeOriginalClientSide(fileHandle, defaultFilename) {
             if (!originalFileArrayBuffer) {
                 showError('Original file not found in memory. Please upload your Excel file first.');
                 return;
@@ -1587,27 +1549,31 @@
                 updatedSheetNames.push(`${ws.name} (${sheetMatched})`);
             }
 
-            bannerText.innerText = `⏳ Generating final updated Excel file (${totalMatched} consignments merged across ${updatedSheetNames.join(', ')})...`;
-            await new Promise(r => setTimeout(r, 60));
-
+            bannerText.innerText = `⏳ Writing updated workbook buffer...`;
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            const defaultFilename = originalFileName ? originalFileName.replace(/\.xlsx$/i, '_LIVE_STATUS.xlsx') : 'DAILY_ENTRY_2026_LIVE_STATUS.xlsx';
 
-            bannerText.innerText = '📁 Please select where to save your updated Excel file...';
-
-            const saveRes = await saveBlobWithPicker(blob, defaultFilename);
-
-            spinner.classList.add('hidden');
-            if (saveRes.cancelled) {
-                banner.className = 'px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between';
-                bannerText.innerHTML = `<span><strong>Save cancelled.</strong> Your merged file is ready whenever you wish to save.</span>`;
-                setTimeout(() => banner.classList.add('hidden'), 5000);
-                return;
+            let finalName = defaultFilename;
+            if (fileHandle) {
+                bannerText.innerText = `⏳ Saving file to selected destination...`;
+                const writable = await fileHandle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                finalName = fileHandle.name;
+            } else {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = defaultFilename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => window.URL.revokeObjectURL(url), 1000);
             }
 
+            spinner.classList.add('hidden');
             banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
-            bannerText.innerHTML = `<span><strong>✅ Saved Successfully!</strong> Saved as <code>${saveRes.savedAs || defaultFilename}</code>. Updated ${totalMatched} consignments in sheets <code>${updatedSheetNames.join(', ')}</code>. Delivered dockets highlighted in bold green.</span>`;
+            bannerText.innerHTML = `<span><strong>✅ Saved Successfully!</strong> Saved to <code>${finalName}</code>. Updated ${totalMatched} consignments in sheets <code>${updatedSheetNames.join(', ')}</code>. All delivered dockets marked bold green.</span>`;
             setTimeout(() => {
                 banner.classList.add('hidden');
             }, 8000);
@@ -1619,6 +1585,32 @@
                 return;
             }
 
+            const defaultFilename = (mode === 'merged')
+                ? (originalFileName ? originalFileName.replace(/\.xlsx$/i, '_LIVE_STATUS.xlsx') : 'DAILY_ENTRY_2026_LIVE_STATUS.xlsx')
+                : (currentCourier === 'both' ? 'Combined_Tracking_Summary.xlsx' : (currentCourier === 'trackon' ? 'Trackon_Tracking_Summary.xlsx' : 'DTDC_Tracking_Summary.xlsx'));
+
+            // Step 1: Request save location IMMEDIATELY on click (fresh user gesture)
+            let fileHandle = null;
+            if ('showSaveFilePicker' in window) {
+                try {
+                    fileHandle = await window.showSaveFilePicker({
+                        suggestedName: defaultFilename,
+                        types: [{
+                            description: 'Excel Workbook (*.xlsx)',
+                            accept: {
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+                            }
+                        }]
+                    });
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        // User cancelled Save As dialog
+                        return;
+                    }
+                    console.warn('showSaveFilePicker error:', err);
+                }
+            }
+
             const btnSummary = document.getElementById('btn-export-summary');
             const btnMerged = document.getElementById('btn-export-merged');
             const banner = document.getElementById('export-status-banner');
@@ -1627,7 +1619,7 @@
 
             if (mode === 'merged') {
                 if (!originalFileArrayBuffer) {
-                    alert('Please upload your Excel file first before merging, or click "Export Summary (.xlsx)" for a standalone tracking spreadsheet.');
+                    alert('Please upload your Excel file first before merging.');
                     return;
                 }
 
@@ -1636,7 +1628,7 @@
                 document.getElementById('btn-export-merged-text').innerText = 'Merging...';
 
                 try {
-                    await mergeOriginalClientSide();
+                    await mergeOriginalClientSide(fileHandle, defaultFilename);
                 } catch (err) {
                     spinner.classList.add('hidden');
                     banner.className = 'px-4 py-2.5 bg-rose-50 border-b border-rose-200 text-xs text-rose-900 flex items-center justify-between';
@@ -1671,21 +1663,28 @@
                 }
 
                 const blob = await res.blob();
-                const defaultName = currentCourier === 'both' ? 'Combined_Tracking_Summary.xlsx' : (currentCourier === 'trackon' ? 'Trackon_Tracking_Summary.xlsx' : 'DTDC_Tracking_Summary.xlsx');
-                
-                bannerText.innerText = '📁 Please select where to save your summary Excel file...';
-                const saveRes = await saveBlobWithPicker(blob, defaultName);
+                let finalName = defaultFilename;
 
-                spinner.classList.add('hidden');
-                if (saveRes.cancelled) {
-                    banner.className = 'px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between';
-                    bannerText.innerHTML = `<span><strong>Save cancelled.</strong></span>`;
-                    setTimeout(() => banner.classList.add('hidden'), 4000);
-                    return;
+                if (fileHandle) {
+                    bannerText.innerText = `⏳ Saving summary file to selected destination...`;
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    finalName = fileHandle.name;
+                } else {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = defaultFilename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
                 }
 
+                spinner.classList.add('hidden');
                 banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
-                bannerText.innerHTML = `<span><strong>✅ Saved Successfully!</strong> <code class="font-mono">${saveRes.savedAs || defaultName}</code> has been saved.</span>`;
+                bannerText.innerHTML = `<span><strong>✅ Saved Successfully!</strong> Saved to <code>${finalName}</code>.</span>`;
                 setTimeout(() => {
                     banner.classList.add('hidden');
                 }, 6000);
