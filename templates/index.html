@@ -250,52 +250,52 @@
             
             <!-- Statistics Cards -->
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                <div onclick="setFilter('all')" class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group" title="Click to show All">
                     <div>
-                        <p class="text-xs font-medium text-slate-500">Total Tracked</p>
+                        <p class="text-xs font-medium text-slate-500 group-hover:text-slate-800">Total Tracked</p>
                         <p class="text-xl font-bold text-slate-900 mt-0.5" id="stat-total">0</p>
                     </div>
-                    <div class="w-10 h-10 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center text-lg">
+                    <div class="w-10 h-10 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center text-lg group-hover:bg-slate-200">
                         <i class="bi bi-boxes"></i>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                <div onclick="setFilter('Delivered')" class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-emerald-400 hover:shadow-md transition-all group" title="Click to filter Delivered">
                     <div>
-                        <p class="text-xs font-medium text-emerald-600">Delivered</p>
+                        <p class="text-xs font-medium text-emerald-600 group-hover:text-emerald-700">Delivered</p>
                         <p class="text-xl font-bold text-emerald-700 mt-0.5" id="stat-delivered">0</p>
                     </div>
-                    <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center text-lg">
+                    <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center text-lg group-hover:bg-emerald-200">
                         <i class="bi bi-check-circle-fill"></i>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                <div onclick="setFilter('In Transit')" class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group" title="Click to filter In Transit">
                     <div>
-                        <p class="text-xs font-medium text-blue-600">In Transit</p>
+                        <p class="text-xs font-medium text-blue-600 group-hover:text-blue-700">In Transit</p>
                         <p class="text-xl font-bold text-blue-700 mt-0.5" id="stat-transit">0</p>
                     </div>
-                    <div class="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center text-lg">
+                    <div class="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center text-lg group-hover:bg-blue-200">
                         <i class="bi bi-truck"></i>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                <div onclick="setFilter('Out for Delivery')" class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-amber-400 hover:shadow-md transition-all group" title="Click to filter Out for Delivery">
                     <div>
-                        <p class="text-xs font-medium text-amber-600">Out for Delivery</p>
+                        <p class="text-xs font-medium text-amber-600 group-hover:text-amber-700">Out for Delivery</p>
                         <p class="text-xl font-bold text-amber-700 mt-0.5" id="stat-ofd">0</p>
                     </div>
-                    <div class="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center text-lg">
+                    <div class="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center text-lg group-hover:bg-amber-200">
                         <i class="bi bi-bicycle"></i>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                <div onclick="setFilter('issues')" class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-rose-400 hover:shadow-md transition-all group" title="Click to view Issues / Undelivered / Not Found">
                     <div>
-                        <p class="text-xs font-medium text-rose-600">Issues / Other</p>
+                        <p class="text-xs font-medium text-rose-600 group-hover:text-rose-700">Issues / Other</p>
                         <p class="text-xl font-bold text-rose-700 mt-0.5" id="stat-issues">0</p>
                     </div>
-                    <div class="w-10 h-10 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center text-lg">
+                    <div class="w-10 h-10 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center text-lg group-hover:bg-rose-200">
                         <i class="bi bi-exclamation-octagon-fill"></i>
                     </div>
                 </div>
@@ -310,6 +310,7 @@
                         <button onclick="setFilter('Delivered')" id="filter-btn-delivered" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-200">Delivered (<span id="count-delivered">0</span>)</button>
                         <button onclick="setFilter('In Transit')" id="filter-btn-transit" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-200">In Transit (<span id="count-transit">0</span>)</button>
                         <button onclick="setFilter('Out for Delivery')" id="filter-btn-ofd" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-200">Out for Delivery (<span id="count-ofd">0</span>)</button>
+                        <button onclick="setFilter('issues')" id="filter-btn-issues" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100">⚠️ Issues / Other (<span id="count-issues">0</span>)</button>
                         <button onclick="setFilter('dtdc')" id="filter-btn-dtdc" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100">🚚 DTDC (<span id="count-dtdc">0</span>)</button>
                         <button onclick="setFilter('trackon')" id="filter-btn-trackon" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100">📦 Trackon (<span id="count-trackon">0</span>)</button>
                     </div>
@@ -1142,6 +1143,8 @@
             document.getElementById('count-delivered').innerText = delivered;
             document.getElementById('count-transit').innerText = transit;
             document.getElementById('count-ofd').innerText = ofd;
+            const issuesEl = document.getElementById('count-issues');
+            if (issuesEl) issuesEl.innerText = issues;
             document.getElementById('count-dtdc').innerText = dtdcCount;
             document.getElementById('count-trackon').innerText = trackonCount;
 
@@ -1163,6 +1166,9 @@
                 document.getElementById('filter-btn-transit').className = "filter-tab px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white shadow-sm";
             } else if (filter === 'Out for Delivery') {
                 document.getElementById('filter-btn-ofd').className = "filter-tab px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-600 text-white shadow-sm";
+            } else if (filter === 'issues') {
+                const btnIssues = document.getElementById('filter-btn-issues');
+                if (btnIssues) btnIssues.className = "filter-tab px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-600 text-white shadow-sm";
             } else if (filter === 'dtdc') {
                 document.getElementById('filter-btn-dtdc').className = "filter-tab px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-700 text-white shadow-sm";
             } else if (filter === 'trackon') {
@@ -1184,7 +1190,10 @@
 
                 if (activeFilter === 'dtdc' && isTrackonItem) return;
                 if (activeFilter === 'trackon' && !isTrackonItem) return;
-                if (activeFilter !== 'all' && activeFilter !== 'dtdc' && activeFilter !== 'trackon' && r.category !== activeFilter) {
+                if (activeFilter === 'issues') {
+                    const isStandard = ['Delivered', 'In Transit', 'Out for Delivery', 'Booked'].includes(r.category);
+                    if (isStandard) return;
+                } else if (activeFilter !== 'all' && activeFilter !== 'dtdc' && activeFilter !== 'trackon' && r.category !== activeFilter) {
                     return;
                 }
 
@@ -1208,7 +1217,7 @@
                 } else if (r.category === 'In Transit') {
                     badgeClass = "bg-blue-50 text-blue-700 border-blue-200";
                     iconClass = "bi-truck text-blue-500";
-                } else if (r.category === 'Issue/RTO' || r.category === 'Not Found') {
+                } else {
                     badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
                     iconClass = "bi-exclamation-triangle-fill text-rose-500";
                 }
