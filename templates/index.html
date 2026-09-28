@@ -1435,29 +1435,31 @@
             let totalMatched = 0;
             const updatedSheetNames = [];
 
+            // Helper to safely set cell styles without mutating shared template styles across other rows/past dates
+            function setCellStyle(cell, props) {
+                if (!cell) return;
+                cell.style = Object.assign({}, cell.style, props);
+            }
+
             for (const { ws, type } of targetSheets) {
                 bannerText.innerText = `⏳ Merging live tracking status into sheet "${ws.name}"...`;
                 await new Promise(r => setTimeout(r, 60));
 
                 const hStatus = ws.getCell(1, statusCol);
                 hStatus.value = 'Live Status';
-                hStatus.fill = headerFill;
-                hStatus.font = headerFont;
+                setCellStyle(hStatus, { fill: headerFill, font: headerFont });
 
                 const hEdd = ws.getCell(1, eddCol);
                 hEdd.value = 'EDD';
-                hEdd.fill = headerFill;
-                hEdd.font = headerFont;
+                setCellStyle(hEdd, { fill: headerFill, font: headerFont });
 
                 const hAct = ws.getCell(1, actCol);
                 hAct.value = 'Latest Activity';
-                hAct.fill = headerFill;
-                hAct.font = headerFont;
+                setCellStyle(hAct, { fill: headerFill, font: headerFont });
 
                 const hTime = ws.getCell(1, timeCol);
                 hTime.value = 'Activity Date/Time';
-                hTime.fill = headerFill;
-                hTime.font = headerFont;
+                setCellStyle(hTime, { fill: headerFill, font: headerFont });
 
                 // Ensure newly created columns have professional widths
                 ws.getColumn(statusCol).width = 22;
@@ -1497,7 +1499,6 @@
                         const info = statusMap[rowDocket];
                         const cStatus = row.getCell(statusCol);
                         cStatus.value = info.status || '';
-                        cStatus.font = statusFont;
 
                         const sLower = String(info.status || '').toLowerCase().trim();
                         const cLower = String(info.category || '').toLowerCase().trim();
@@ -1511,37 +1512,31 @@
                         const isIssue = (cLower === 'issue/rto') || (cLower === 'not found') || /(?:undelivered|not delivered|un-delivered|failed|rto|return|cancel|damage|hold|refused|rejected)/.test(sLower);
 
                         if (isDelivered) {
-                            cStatus.fill = fillDelivered;
-                            cStatus.font = fontDelivered;
+                            setCellStyle(cStatus, { fill: fillDelivered, font: fontDelivered });
                             if (docketCell) {
-                                docketCell.fill = fillDelivered;
-                                docketCell.font = fontDelivered;
+                                setCellStyle(docketCell, { fill: fillDelivered, font: fontDelivered });
                             }
                         } else {
-                            if (docketCell) {
-                                docketCell.fill = null;
-                                docketCell.font = regularFont;
-                            }
                             if (isOfd) {
-                                cStatus.fill = fillOfd;
+                                setCellStyle(cStatus, { fill: fillOfd, font: statusFont });
                             } else if (isIssue) {
-                                cStatus.fill = fillIssue;
+                                setCellStyle(cStatus, { fill: fillIssue, font: statusFont });
                             } else {
-                                cStatus.fill = fillTransit;
+                                setCellStyle(cStatus, { fill: fillTransit, font: statusFont });
                             }
                         }
 
                         const cEdd = row.getCell(eddCol);
                         cEdd.value = info.edd || '-';
-                        cEdd.font = regularFont;
+                        setCellStyle(cEdd, { font: regularFont });
 
                         const cAct = row.getCell(actCol);
                         cAct.value = info.latest_update || '-';
-                        cAct.font = regularFont;
+                        setCellStyle(cAct, { font: regularFont });
 
                         const cTime = row.getCell(timeCol);
                         cTime.value = info.latest_time || '-';
-                        cTime.font = regularFont;
+                        setCellStyle(cTime, { font: regularFont });
                     }
                 });
 

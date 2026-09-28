@@ -1033,9 +1033,6 @@ def export_excel():
                                         docket_cell.fill = fill_delivered
                                         docket_cell.font = font_delivered
                                 else:
-                                    if docket_cell is not None:
-                                        docket_cell.fill = PatternFill(fill_type=None)
-                                        docket_cell.font = regular_font
                                     if 'out for delivery' in st_lower or cat_lower == 'out for delivery':
                                         c_status.fill = fill_ofd
                                     elif any(k in st_lower for k in ['undelivered', 'not delivered', 'failed', 'rto', 'return', 'cancel']) or cat_lower in ['issue/rto', 'not found']:
