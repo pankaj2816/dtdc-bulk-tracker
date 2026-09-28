@@ -395,11 +395,149 @@ def get_captcha():
         return jsonify({'success': False, 'error': f'Failed to fetch captcha: {str(e)}'}), 500
 
 
+def track_trackon_consignments(numbers):
+    """Query Trackon multi-tracking endpoint (https://trackon.in/courier-tracking-Multi) for a batch of numbers."""
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    query_str = ', '.join(numbers)
+    data = urllib.parse.urlencode({
+        'awbMultiTrackingId': query_str,
+        'btnMulAwbTrack': 'Track'
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        'https://trackon.in/courier-tracking-Multi',
+        data=data,
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer': 'https://trackon.in/'
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=25) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
+    except Exception as e:
+        print(f"Trackon query error: {e}", flush=True)
+        html = ''
+
+    soup = BeautifulSoup(html, 'html.parser')
+    results = []
+
+    def categorize_event(evt):
+        u = evt.upper()
+        if 'DELIVERED' in u:
+            return 'Delivered', 'Delivered'
+        if any(k in u for k in ['OUT FOR DELIVERY', 'MANIFEST PREPARED']):
+            return 'Out for Delivery', 'Out for Delivery'
+        if any(k in u for k in ['RTO', 'RETURN', 'CANCEL', 'DAMAGE', 'HOLD', 'UNDELIVERED', 'REFUSED', 'REJECTED']):
+            return 'Issue/RTO', f'Issue: {evt[:30]}'
+        if any(k in u for k in ['IN TRANSIT', 'DISPATCHED', 'VEHICLE OUT', 'PROCESSING', 'ARRIVED', 'BOOKED', 'PICKED UP']):
+            return 'In Transit', evt
+        return 'In Transit', evt
+
+    for num in numbers:
+        # Check if explicitly Not Found
+        not_found_pattern = rf'Consignment\s*No:\s*{num}\s*\((?:Not\s*Found|No\s*Record)\)'
+        if re.search(not_found_pattern, html, re.I):
+            results.append({
+                'awb': num,
+                'category': 'Not Found',
+                'status': 'Not Found on Trackon',
+                'edd': '-',
+                'origin': '-',
+                'destination': '-',
+                'latest_update': 'No record found',
+                'latest_time': '-'
+            })
+            continue
+
+        c_header = soup.find(string=re.compile(rf'Consignment\s*No:\s*{num}', re.I))
+        if not c_header:
+            results.append({
+                'awb': num,
+                'category': 'Not Found',
+                'status': 'Not Found / Expired (>75 days)',
+                'edd': '-',
+                'origin': '-',
+                'destination': '-',
+                'latest_update': '-',
+                'latest_time': '-'
+            })
+            continue
+
+        header_text = str(c_header)
+        edd = '-'
+        m_due = re.search(r'DueDate\s*:\s*([0-9/\.\-]+)', header_text, re.I)
+        if m_due:
+            edd = m_due.group(1).strip()
+
+        tbl = c_header.find_parent('div').find_next('table') if c_header.find_parent('div') else None
+        if not tbl:
+            results.append({
+                'awb': num,
+                'category': 'Booked',
+                'status': 'Booked / Processing',
+                'edd': edd,
+                'origin': '-',
+                'destination': '-',
+                'latest_update': 'Details pending',
+                'latest_time': '-'
+            })
+            continue
+
+        rows = tbl.find_all('tr')
+        if len(rows) <= 1:
+            results.append({
+                'awb': num,
+                'category': 'Booked',
+                'status': 'Booked / Processing',
+                'edd': edd,
+                'origin': '-',
+                'destination': '-',
+                'latest_update': 'No scan events yet',
+                'latest_time': '-'
+            })
+            continue
+
+        # Row 1 is latest event
+        cells_latest = [c.get_text(strip=True) for c in rows[1].find_all(['td', 'th'])]
+        latest_date = cells_latest[0] if len(cells_latest) > 0 else '-'
+        latest_loc = cells_latest[2] if len(cells_latest) > 2 else '-'
+        latest_evt = cells_latest[4] if len(cells_latest) > 4 else (cells_latest[3] if len(cells_latest) > 3 else '-')
+
+        # Earliest event (last row)
+        cells_earliest = [c.get_text(strip=True) for c in rows[-1].find_all(['td', 'th'])]
+        origin_loc = cells_earliest[2] if len(cells_earliest) > 2 else '-'
+        booking_date = cells_earliest[0] if len(cells_earliest) > 0 else '-'
+
+        cat, status_text = categorize_event(latest_evt)
+
+        results.append({
+            'awb': num,
+            'category': cat,
+            'status': status_text,
+            'edd': edd,
+            'origin': origin_loc,
+            'destination': latest_loc,
+            'booking_date': booking_date,
+            'latest_update': f'{latest_loc}: {latest_evt}',
+            'latest_time': latest_date
+        })
+
+    return results
+
+
 @app.route('/api/track-stream', methods=['POST'])
 def track_stream():
     """Stream live tracking results in safe 25-number chunks with automated captcha solving."""
     data = request.json or {}
     raw_numbers = data.get('numbers', [])
+    courier = data.get('courier', 'dtdc').lower()
 
     clean_nums = []
     for n in raw_numbers:
@@ -421,29 +559,38 @@ def track_stream():
             batch_num = (i // CHUNK_SIZE) + 1
             total_batches = (total + CHUNK_SIZE - 1) // CHUNK_SIZE
 
-            # Step 1: Automatically solve captcha & get verified token
-            yield f"data: {json.dumps({'type': 'status', 'message': f'Verifying security token for batch {batch_num} of {total_batches}...', 'completed': completed, 'total': total})}\n\n"
+            if courier == 'trackon':
+                yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking batch {batch_num} of {total_batches} ({len(chunk)} parcels via Trackon)...', 'completed': completed, 'total': total})}\n\n"
+                try:
+                    chunk_results = track_trackon_consignments(chunk)
+                except Exception as e:
+                    print(f"Error tracking Trackon chunk: {e}")
+                    chunk_results = [{'awb': n, 'category': 'Issue/RTO', 'status': f'Error: {str(e)[:30]}', 'edd': '-', 'origin': '-', 'destination': '-', 'latest_update': '-', 'latest_time': '-'} for n in chunk]
+            else:
+                # DTDC Tracking
+                # Step 1: Automatically solve captcha & get verified token
+                yield f"data: {json.dumps({'type': 'status', 'message': f'Verifying security token for batch {batch_num} of {total_batches}...', 'completed': completed, 'total': total})}\n\n"
 
-            token = get_verified_token_auto(max_attempts=8)
-            if not token:
-                yield f"data: {json.dumps({'type': 'error', 'message': f'Could not verify security token for batch {batch_num}. Retrying...'})}\n\n"
                 token = get_verified_token_auto(max_attempts=8)
                 if not token:
-                    continue
+                    yield f"data: {json.dumps({'type': 'error', 'message': f'Could not verify security token for batch {batch_num}. Retrying...'})}\n\n"
+                    token = get_verified_token_auto(max_attempts=8)
+                    if not token:
+                        continue
 
-            # Step 2: Query DTDC for this chunk
-            yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking batch {batch_num} of {total_batches} ({len(chunk)} parcels)...', 'completed': completed, 'total': total})}\n\n"
+                # Step 2: Query DTDC for this chunk
+                yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking batch {batch_num} of {total_batches} ({len(chunk)} parcels via DTDC)...', 'completed': completed, 'total': total})}\n\n"
 
-            try:
-                pull_res = pull_dtdc_details(chunk, token)
-                if pull_res.get('success') and pull_res.get('redirect') and pull_res.get('payload'):
-                    html = post_to_trackshipment(pull_res['redirect'], pull_res['payload'])
-                    chunk_results = parse_dtdc_html(html, requested_numbers=chunk)
-                else:
+                try:
+                    pull_res = pull_dtdc_details(chunk, token)
+                    if pull_res.get('success') and pull_res.get('redirect') and pull_res.get('payload'):
+                        html = post_to_trackshipment(pull_res['redirect'], pull_res['payload'])
+                        chunk_results = parse_dtdc_html(html, requested_numbers=chunk)
+                    else:
+                        chunk_results = parse_dtdc_html("", requested_numbers=chunk)
+                except Exception as e:
+                    print(f"Error tracking chunk: {e}")
                     chunk_results = parse_dtdc_html("", requested_numbers=chunk)
-            except Exception as e:
-                print(f"Error tracking chunk: {e}")
-                chunk_results = parse_dtdc_html("", requested_numbers=chunk)
 
             completed += len(chunk)
             all_accumulated.extend(chunk_results)
@@ -463,6 +610,111 @@ def track_stream():
         yield f"data: {json.dumps({'type': 'done', 'total': total, 'count': len(all_accumulated)})}\n\n"
 
     return Response(generate_events(), mimetype='text/event-stream')
+
+
+def extract_sheet_dockets(wb, sheet_target, courier_type):
+    target_sheet = None
+    for s in wb.sheetnames:
+        if s.strip().upper() == sheet_target.upper():
+            target_sheet = s
+            break
+    if not target_sheet:
+        for s in wb.sheetnames:
+            if sheet_target.upper() in s.strip().upper():
+                target_sheet = s
+                break
+    if not target_sheet:
+        return None
+
+    ws = wb[target_sheet]
+    date_dockets = defaultdict(list)
+    all_dockets = []
+    curr_date = "Unknown"
+
+    for row in ws.iter_rows(values_only=True):
+        row_date = None
+        row_dockets = []
+        for cell in row:
+            if not cell:
+                continue
+            c_str = str(cell).strip()
+            if re.match(r'^\d{2}[\.\/]\d{2}[\.\/]\d{2,4}$', c_str):
+                row_date = c_str
+            elif re.search(r'\b(\d{2}\.\d{2}\.\d{2,4})\b', c_str):
+                row_date = re.search(r'\b(\d{2}\.\d{2}\.\d{2,4})\b', c_str).group(1)
+            
+            if courier_type == 'dtdc':
+                if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', c_str, re.I):
+                    row_dockets.append(c_str.upper())
+            else:  # trackon
+                if re.match(r'^[0-9]{10,12}$', c_str):
+                    row_dockets.append(c_str)
+
+        if row_date:
+            curr_date = row_date
+
+        for d in row_dockets:
+            if d not in all_dockets:
+                all_dockets.append(d)
+            if d not in date_dockets[curr_date]:
+                date_dockets[curr_date].append(d)
+
+    valid_dates = [d for d in date_dockets.keys() if d != "Unknown"]
+    latest_date = valid_dates[-1] if valid_dates else None
+
+    date_options = []
+    if latest_date:
+        date_options.append({
+            'label': f"Latest Date: {latest_date} ({len(date_dockets[latest_date])} dockets)",
+            'value': latest_date,
+            'count': len(date_dockets[latest_date]),
+            'numbers': date_dockets[latest_date]
+        })
+
+    if len(valid_dates) >= 2:
+        last_3 = valid_dates[-3:]
+        comb_3 = []
+        for d in last_3:
+            comb_3.extend(date_dockets[d])
+        date_options.append({
+            'label': f"Last 3 Days ({len(comb_3)} dockets)",
+            'value': 'last_3',
+            'count': len(comb_3),
+            'numbers': comb_3
+        })
+
+    if len(valid_dates) >= 4:
+        last_7 = valid_dates[-7:]
+        comb_7 = []
+        for d in last_7:
+            comb_7.extend(date_dockets[d])
+        date_options.append({
+            'label': f"Last 7 Days ({len(comb_7)} dockets)",
+            'value': 'last_7',
+            'count': len(comb_7),
+            'numbers': comb_7
+        })
+
+    for d in reversed(valid_dates[-7:]):
+        if d != latest_date:
+            date_options.append({
+                'label': f"Date {d} ({len(date_dockets[d])} dockets)",
+                'value': d,
+                'count': len(date_dockets[d]),
+                'numbers': date_dockets[d]
+            })
+
+    default_numbers = date_options[0]['numbers'] if date_options else all_dockets[:50]
+
+    return {
+        'sheet': target_sheet,
+        'total_dockets': len(all_dockets),
+        'latest_date': latest_date,
+        'date_options': date_options,
+        'numbers': default_numbers,
+        'count': len(default_numbers),
+        'all_numbers': all_dockets
+    }
 
 
 @app.route('/api/upload-excel', methods=['POST'])
@@ -487,116 +739,40 @@ def upload_excel():
         wb = openpyxl.load_workbook(temp_path, read_only=True)
         sheet_names = wb.sheetnames
 
-        # Strict requirement: consider ONLY 'MIA-2' sheet for DTDC tracking
-        chosen_sheet = None
-        for s in sheet_names:
-            if s.strip().upper() == 'MIA-2':
-                chosen_sheet = s
-                break
-        if not chosen_sheet:
-            for s in sheet_names:
-                if 'MIA-2' in s.strip().upper():
-                    chosen_sheet = s
-                    break
-
-        if not chosen_sheet:
-            wb.close()
-            return jsonify({
-                'success': False,
-                'error': f"Only the 'MIA-2' sheet is used for DTDC tracking. 'MIA-2' was not found in the uploaded file. Available sheets: {', '.join(sheet_names[:5])}..."
-            }), 400
-
-        ws = wb[chosen_sheet]
-        
-        date_dockets = defaultdict(list)
-        all_dockets = []
-        curr_date = "Unknown"
-
-        for row in ws.iter_rows(values_only=True):
-            row_date = None
-            row_dockets = []
-            for cell in row:
-                if not cell:
-                    continue
-                c_str = str(cell).strip()
-                if re.match(r'^\d{2}\.\d{2}\.\d{2,4}$', c_str):
-                    row_date = c_str
-                elif re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', c_str, re.I):
-                    row_dockets.append(c_str)
-
-            if row_date:
-                curr_date = row_date
-
-            for d in row_dockets:
-                if d not in all_dockets:
-                    all_dockets.append(d)
-                if d not in date_dockets[curr_date]:
-                    date_dockets[curr_date].append(d)
-
+        user_courier = request.form.get('courier', 'dtdc').lower()
+        dtdc_info = extract_sheet_dockets(wb, 'MIA-2', 'dtdc')
+        trackon_info = extract_sheet_dockets(wb, 'TRACKON', 'trackon')
         wb.close()
 
-        valid_dates = [d for d in date_dockets.keys() if d != "Unknown"]
-        latest_date = valid_dates[-1] if valid_dates else None
-        
-        date_options = []
+        if not dtdc_info and not trackon_info:
+            return jsonify({
+                'success': False,
+                'error': f"Neither 'MIA-2' (DTDC) nor 'TRACKON' (Trackon) sheets were found in the uploaded workbook. Available sheets: {', '.join(sheet_names[:5])}..."
+            }), 400
 
-        # Option 1: Latest Date
-        if latest_date:
-            date_options.append({
-                'label': f"Latest Date: {latest_date} ({len(date_dockets[latest_date])} dockets)",
-                'value': latest_date,
-                'count': len(date_dockets[latest_date]),
-                'numbers': date_dockets[latest_date]
-            })
+        # Choose active courier
+        if user_courier == 'trackon':
+            active_courier = 'trackon' if trackon_info else 'dtdc'
+        else:
+            active_courier = 'dtdc' if dtdc_info else 'trackon'
 
-        # Option 2: Last 3 Days
-        if len(valid_dates) >= 2:
-            last_3 = valid_dates[-3:]
-            comb_3 = []
-            for d in last_3:
-                comb_3.extend(date_dockets[d])
-            date_options.append({
-                'label': f"Last 3 Days ({len(comb_3)} dockets)",
-                'value': 'last_3',
-                'count': len(comb_3),
-                'numbers': comb_3
-            })
-
-        # Option 3: Last 7 Days
-        if len(valid_dates) >= 4:
-            last_7 = valid_dates[-7:]
-            comb_7 = []
-            for d in last_7:
-                comb_7.extend(date_dockets[d])
-            date_options.append({
-                'label': f"Last 7 Days ({len(comb_7)} dockets)",
-                'value': 'last_7',
-                'count': len(comb_7),
-                'numbers': comb_7
-            })
-
-        # Option 4: Individual recent dates
-        for d in reversed(valid_dates[-7:]):
-            if d != latest_date:
-                date_options.append({
-                    'label': f"Date {d} ({len(date_dockets[d])} dockets)",
-                    'value': d,
-                    'count': len(date_dockets[d]),
-                    'numbers': date_dockets[d]
-                })
-
-        default_numbers = date_options[0]['numbers'] if date_options else all_dockets[:50]
+        active_info = trackon_info if active_courier == 'trackon' else dtdc_info
 
         return jsonify({
             'success': True,
             'filename': filename,
             'sheets': sheet_names,
-            'chosen_sheet': chosen_sheet,
-            'total_dockets_in_sheet': len(all_dockets),
-            'date_options': date_options,
-            'numbers': default_numbers,
-            'count': len(default_numbers),
-            'latest_date': latest_date
+            'active_courier': active_courier,
+            'couriers': {
+                'dtdc': dtdc_info,
+                'trackon': trackon_info
+            },
+            'chosen_sheet': active_info['sheet'],
+            'total_dockets_in_sheet': active_info['total_dockets'],
+            'date_options': active_info['date_options'],
+            'numbers': active_info['numbers'],
+            'count': active_info['count'],
+            'latest_date': active_info['latest_date']
         })
 
     except Exception as e:
@@ -608,11 +784,12 @@ def export_excel():
     data = request.json or {}
     results = data.get('results', [])
     mode = data.get('mode', 'summary')  # 'summary' (fast instant) or 'merged' (merge original file)
+    courier = data.get('courier', 'dtdc').lower()
 
     if not results:
         return jsonify({'success': False, 'error': 'No data to export.'}), 400
 
-    status_map = {r['awb'].strip().upper(): r for r in results}
+    status_map = {str(r['awb']).strip().upper(): r for r in results}
 
     if mode == 'merged':
         files_dir = UPLOAD_FOLDER if (os.path.exists(UPLOAD_FOLDER) and os.listdir(UPLOAD_FOLDER)) else 'uploads'
@@ -625,7 +802,7 @@ def export_excel():
 
         if base_file and os.path.exists(base_file):
             try:
-                print(f"Merging live status into {base_file}...", flush=True)
+                print(f"Merging live status into {base_file} for {courier.upper()}...", flush=True)
                 wb = openpyxl.load_workbook(base_file)
                 header_fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
                 header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
@@ -638,10 +815,12 @@ def export_excel():
                 fill_ofd = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
                 fill_issue = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
 
-                # Update ONLY the 'MIA-2' sheet
-                target_sheets = [s for s in wb.sheetnames if s.strip().upper() == 'MIA-2']
+                # Target sheet: TRACKON for Trackon, MIA-2 for DTDC
+                target_sheet_name = 'TRACKON' if courier == 'trackon' else 'MIA-2'
+                target_sheets = [s for s in wb.sheetnames if s.strip().upper() == target_sheet_name]
                 if not target_sheets:
-                    target_sheets = [s for s in wb.sheetnames if 'MIA-2' in s.strip().upper()]
+                    target_sheets = [s for s in wb.sheetnames if target_sheet_name in s.strip().upper()]
+
                 for sname in target_sheets[:1]:
                     ws = wb[sname]
                     status_col = 11
@@ -665,10 +844,16 @@ def export_excel():
                         for cell in row[:10]:
                             if cell.value:
                                 val_str = str(cell.value).strip()
-                                if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', val_str, re.I):
-                                    row_docket = val_str.upper()
-                                    docket_cell = cell
-                                    break
+                                if courier == 'trackon':
+                                    if re.match(r'^[0-9]{10,12}$', val_str):
+                                        row_docket = val_str
+                                        docket_cell = cell
+                                        break
+                                else:
+                                    if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', val_str, re.I):
+                                        row_docket = val_str.upper()
+                                        docket_cell = cell
+                                        break
 
                         if row_docket and row_docket in status_map:
                             info = status_map[row_docket]
@@ -710,7 +895,7 @@ def export_excel():
     # Standalone summary workbook fallback (Fast, 0.05s)
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "DTDC Tracking Status"
+    ws.title = "Trackon Tracking Status" if courier == 'trackon' else "DTDC Tracking Status"
     ws.views.sheetView[0].showGridLines = True
 
     header_fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
@@ -784,10 +969,11 @@ def export_excel():
     wb.save(buf)
     buf.seek(0)
 
+    summary_name = "Trackon_Tracking_Summary.xlsx" if courier == 'trackon' else "DTDC_Tracking_Summary.xlsx"
     return send_file(
         buf,
         as_attachment=True,
-        download_name="DTDC_Tracking_Summary.xlsx",
+        download_name=summary_name,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
