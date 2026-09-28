@@ -392,6 +392,27 @@
         let allResults = [];
         let activeFilter = 'all';
 
+        function isValidDateStr(s) {
+            if (!s || typeof s !== 'string') return false;
+            const m = s.trim().match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})$/);
+            if (!m) return false;
+            const d = parseInt(m[1], 10);
+            const mo = parseInt(m[2], 10);
+            let y = parseInt(m[3], 10);
+            if (y < 100) y += 2000;
+            if (mo < 1 || mo > 12) return false;
+            if (d < 1 || d > 31) return false;
+            // Realistic calendar year check:
+            // Excel drag-autofill created artifacts like 27.12.87 (year 2087) and future dates.
+            // Only accept dates up to the current year/today (plus 1 day buffer for timezones).
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            if (y < 2024 || y > currentYear) return false;
+            const timestamp = new Date(y, mo - 1, d).getTime();
+            if (timestamp > now.getTime() + 86400000) return false;
+            return true;
+        }
+
         function parseDMY(s) {
             if (!s || typeof s !== 'string') return 0;
             const parts = s.split(/[.\/]/).map(Number);
@@ -572,11 +593,11 @@
                     const cStr = String(cellVal).trim();
                     if (!cStr) continue;
 
-                    if (datePattern1.test(cStr)) {
+                    if (datePattern1.test(cStr) && isValidDateStr(cStr)) {
                         rowDate = cStr;
                     } else {
                         const m = cStr.match(datePattern2);
-                        if (m) {
+                        if (m && isValidDateStr(m[1])) {
                             rowDate = m[1];
                         }
                     }
@@ -610,7 +631,8 @@
                 }
             }
 
-            const validDates = Object.keys(dateDockets).filter(d => d !== "Unknown");
+            const validDates = Object.keys(dateDockets).filter(d => d !== "Unknown" && isValidDateStr(d));
+            validDates.sort((a, b) => parseDMY(a) - parseDMY(b));
             const latestDate = validDates.length > 0 ? validDates[validDates.length - 1] : null;
 
             const dateOptions = [];
@@ -797,7 +819,7 @@
                         const allDateKeys = [...new Set([
                             ...Object.keys(dtdcDates),
                             ...Object.keys(trackonDates)
-                        ])].filter(d => d !== "Unknown");
+                        ])].filter(d => d !== "Unknown" && isValidDateStr(d));
 
                         allDateKeys.sort((a, b) => parseDMY(a) - parseDMY(b));
 

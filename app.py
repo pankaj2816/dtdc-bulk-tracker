@@ -664,6 +664,44 @@ def track_stream():
     return Response(generate_events(), mimetype='text/event-stream')
 
 
+def is_valid_date_str(s):
+    if not s or not isinstance(s, str):
+        return False
+    m = re.match(r'^(\d{1,2})[\./](\d{1,2})[\./](\d{2,4})$', s.strip())
+    if not m:
+        return False
+    d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if y < 100:
+        y += 2000
+    if mo < 1 or mo > 12 or d < 1 or d > 31:
+        return False
+    now = datetime.now()
+    if y < 2024 or y > now.year:
+        return False
+    try:
+        ts = datetime(y, mo, d).timestamp()
+        if ts > now.timestamp() + 86400:
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def parse_dmy(s):
+    if not s or not isinstance(s, str):
+        return 0
+    parts = [int(p) for p in re.split(r'[./]', s) if p.isdigit()]
+    if len(parts) < 3:
+        return 0
+    d, mo, y = parts[0], parts[1], parts[2]
+    if y < 100:
+        y += 2000
+    try:
+        return datetime(y, mo, d).timestamp()
+    except Exception:
+        return 0
+
+
 def extract_sheet_dockets(wb, sheet_target, courier_type):
     target_sheet = None
     for s in wb.sheetnames:
@@ -690,10 +728,12 @@ def extract_sheet_dockets(wb, sheet_target, courier_type):
             if not cell:
                 continue
             c_str = str(cell).strip()
-            if re.match(r'^\d{2}[\.\/]\d{2}[\.\/]\d{2,4}$', c_str):
+            if re.match(r'^\d{1,2}[\.\/]\d{1,2}[\.\/]\d{2,4}$', c_str) and is_valid_date_str(c_str):
                 row_date = c_str
-            elif re.search(r'\b(\d{2}\.\d{2}\.\d{2,4})\b', c_str):
-                row_date = re.search(r'\b(\d{2}\.\d{2}\.\d{2,4})\b', c_str).group(1)
+            elif re.search(r'\b(\d{1,2}\.\d{1,2}\.\d{2,4})\b', c_str):
+                m = re.search(r'\b(\d{1,2}\.\d{1,2}\.\d{2,4})\b', c_str)
+                if m and is_valid_date_str(m.group(1)):
+                    row_date = m.group(1)
             
             if courier_type == 'dtdc':
                 if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', c_str, re.I):
@@ -711,7 +751,8 @@ def extract_sheet_dockets(wb, sheet_target, courier_type):
             if d not in date_dockets[curr_date]:
                 date_dockets[curr_date].append(d)
 
-    valid_dates = [d for d in date_dockets.keys() if d != "Unknown"]
+    valid_dates = [d for d in date_dockets.keys() if d != "Unknown" and is_valid_date_str(d)]
+    valid_dates.sort(key=parse_dmy)
     latest_date = valid_dates[-1] if valid_dates else None
 
     date_options = []
