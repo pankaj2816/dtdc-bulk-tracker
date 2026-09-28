@@ -487,11 +487,24 @@ def upload_excel():
         wb = openpyxl.load_workbook(temp_path, read_only=True)
         sheet_names = wb.sheetnames
 
-        chosen_sheet = sheet_names[0]
-        for s in ['MIA-2', 'DAILY ENTRY', 'TPT NAGAR']:
-            if s in sheet_names:
+        # Strict requirement: consider ONLY 'MIA-2' sheet for DTDC tracking
+        chosen_sheet = None
+        for s in sheet_names:
+            if s.strip().upper() == 'MIA-2':
                 chosen_sheet = s
                 break
+        if not chosen_sheet:
+            for s in sheet_names:
+                if 'MIA-2' in s.strip().upper():
+                    chosen_sheet = s
+                    break
+
+        if not chosen_sheet:
+            wb.close()
+            return jsonify({
+                'success': False,
+                'error': f"Only the 'MIA-2' sheet is used for DTDC tracking. 'MIA-2' was not found in the uploaded file. Available sheets: {', '.join(sheet_names[:5])}..."
+            }), 400
 
         ws = wb[chosen_sheet]
         
@@ -625,9 +638,11 @@ def export_excel():
                 fill_ofd = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
                 fill_issue = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
 
-                for sname in ['MIA-2', 'DAILY ENTRY']:
-                    if sname not in wb.sheetnames:
-                        continue
+                # Update ONLY the 'MIA-2' sheet
+                target_sheets = [s for s in wb.sheetnames if s.strip().upper() == 'MIA-2']
+                if not target_sheets:
+                    target_sheets = [s for s in wb.sheetnames if 'MIA-2' in s.strip().upper()]
+                for sname in target_sheets[:1]:
                     ws = wb[sname]
                     status_col = 11
                     edd_col = 12
