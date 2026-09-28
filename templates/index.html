@@ -995,6 +995,7 @@
             const trackBtn = document.getElementById('track-btn');
             const trackBtnText = document.getElementById('track-btn-text');
             const progressBox = document.getElementById('progress-box');
+            const progressSpinner = document.getElementById('progress-spinner');
             const progressText = document.getElementById('progress-text');
             const progressBarFill = document.getElementById('progress-bar-fill');
             const progressCountText = document.getElementById('progress-count-text');
@@ -1005,6 +1006,7 @@
             trackBtnText.innerText = `Tracking (${numbers.length})...`;
             
             progressBox.classList.remove('hidden');
+            if (progressSpinner) progressSpinner.classList.remove('hidden');
             progressBarFill.style.width = '0%';
             progressCountText.innerText = `0 / ${numbers.length} parcels`;
             progressPercentText.innerText = `0%`;
@@ -1080,6 +1082,7 @@
                                 renderResults();
 
                             } else if (event.type === 'done') {
+                                if (progressSpinner) progressSpinner.classList.add('hidden');
                                 progressBarFill.style.width = '100%';
                                 progressPercentText.innerText = '100%';
                                 progressCountText.innerText = `${event.total} / ${event.total} parcels`;
@@ -1091,6 +1094,8 @@
                     }
                 }
 
+                if (progressSpinner) progressSpinner.classList.add('hidden');
+
                 // Scroll smoothly to results
                 setTimeout(() => {
                     const tableCard = document.getElementById('results-table-card');
@@ -1100,8 +1105,10 @@
                 }, 400);
 
             } catch (err) {
+                if (progressSpinner) progressSpinner.classList.add('hidden');
                 showError('Error during tracking: ' + err.message);
             } finally {
+                if (progressSpinner) progressSpinner.classList.add('hidden');
                 trackBtn.disabled = false;
                 trackBtn.classList.remove('opacity-75', 'cursor-not-allowed');
                 trackBtnText.innerText = `Track All Consignments`;
