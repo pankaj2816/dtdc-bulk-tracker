@@ -28,6 +28,28 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 CORS(app)
 
+class VercelPathMiddleware:
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        query = environ.get('QUERY_STRING', '')
+        if '__path__=' in query:
+            import urllib.parse
+            parsed = urllib.parse.parse_qs(query)
+            if '__path__' in parsed and parsed['__path__']:
+                raw_path = parsed['__path__'][0]
+                if not raw_path.startswith('/'):
+                    raw_path = '/' + raw_path
+                while '//' in raw_path:
+                    raw_path = raw_path.replace('//', '/')
+                environ['PATH_INFO'] = raw_path
+                remaining = {k: v for k, v in parsed.items() if k != '__path__'}
+                environ['QUERY_STRING'] = urllib.parse.urlencode(remaining, doseq=True)
+        return self.wsgi_app(environ, start_response)
+
+app.wsgi_app = VercelPathMiddleware(app.wsgi_app)
+
 UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'dtdc_uploads')
 try:
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -348,13 +370,6 @@ def health():
 @app.route('/api/index')
 @app.route('/api/index.py')
 def index():
-    if 'debug' in request.args:
-        return jsonify({
-            'path': request.path,
-            'environ': {k: str(v) for k, v in request.environ.items() if isinstance(v, (str, int, float, bool))},
-            'headers': dict(request.headers),
-            'args': dict(request.args)
-        })
     return render_template('index.html')
 
 
