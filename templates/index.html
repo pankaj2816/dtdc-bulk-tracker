@@ -77,23 +77,27 @@
             <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/60">
                 <div class="flex items-center gap-3">
                     <span class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                        <i class="bi bi-truck text-amber-400"></i> Select Courier / Sheet:
+                        <i class="bi bi-truck text-amber-400"></i> Active Courier / Scope:
                     </span>
                     <div class="inline-flex p-1 bg-slate-950/70 rounded-xl border border-slate-700/60 shadow-inner">
+                        <button type="button" id="courier-btn-both" onclick="setCourier('both')"
+                                class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm bg-gradient-to-r from-blue-600 to-amber-500 text-white flex items-center gap-1.5">
+                            <span>🌟 Both (MIA-2 + TRACKON)</span>
+                        </button>
                         <button type="button" id="courier-btn-dtdc" onclick="setCourier('dtdc')"
-                                class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm bg-dtdc-blue text-white flex items-center gap-1.5">
+                                class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5">
                             <span>🚚 DTDC (MIA-2)</span>
                         </button>
                         <button type="button" id="courier-btn-trackon" onclick="setCourier('trackon')"
-                                class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5">
+                                class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5">
                             <span>📦 Trackon (TRACKON)</span>
                         </button>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    <span id="courier-indicator-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
-                        <span>Tracking Provider: <strong>DTDC Express</strong> (MIA-2 Sheet)</span>
+                    <span id="courier-indicator-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Tracking Provider: <strong>Both Couriers (MIA-2 & TRACKON)</strong></span>
                     </span>
                 </div>
             </div>
@@ -145,18 +149,38 @@
                     </div>
 
                     <!-- File Info Preview -->
-                    <div id="file-info-box" class="hidden bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-sm">
-                        <div class="flex items-center gap-3">
-                            <i class="bi bi-file-earmark-spreadsheet-fill text-emerald-600 text-2xl"></i>
-                            <div>
-                                <p class="font-semibold text-emerald-950" id="file-name-display"></p>
-                                <p class="text-xs text-emerald-700" id="file-stats-display"></p>
+                    <div id="file-info-box" class="hidden bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 space-y-3 shadow-sm">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-emerald-200/70 pb-3">
+                            <div class="flex items-center gap-3">
+                                <i class="bi bi-file-earmark-spreadsheet-fill text-emerald-600 text-3xl"></i>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <p class="font-bold text-emerald-950 text-base" id="file-name-display"></p>
+                                        <span class="text-[11px] font-semibold bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-md">Single File Scanned</span>
+                                    </div>
+                                    <p class="text-xs text-emerald-800 font-medium" id="file-stats-display"></p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs font-bold text-emerald-950 whitespace-nowrap">Select Date to Track:</label>
+                                <select id="date-selector" onchange="changeDateSelection()" class="text-xs bg-white border border-emerald-300 text-emerald-950 rounded-lg px-3 py-2 font-semibold focus:ring-2 focus:ring-emerald-500 shadow-sm min-w-[280px]">
+                                </select>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <label class="text-xs font-semibold text-emerald-900">Select Date to Track:</label>
-                            <select id="date-selector" onchange="changeDateSelection()" class="text-xs bg-white border border-emerald-300 text-emerald-950 rounded-md px-3 py-1.5 font-medium focus:ring-2 focus:ring-emerald-500 shadow-sm">
-                            </select>
+                        <!-- Detected sheets banner -->
+                        <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-bold text-slate-600">Workbook Sheets:</span>
+                                <span id="badge-detected-dtdc" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-100 text-blue-900 border border-blue-200 font-medium">
+                                    🚚 <strong>MIA-2:</strong> <span id="count-detected-dtdc">0</span> dockets (DTDC)
+                                </span>
+                                <span id="badge-detected-trackon" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-200 font-medium">
+                                    📦 <strong>TRACKON:</strong> <span id="count-detected-trackon">0</span> dockets (Trackon)
+                                </span>
+                            </div>
+                            <div class="text-[11px] text-emerald-900 font-semibold bg-emerald-100 px-2.5 py-1 rounded-md border border-emerald-200">
+                                💡 Both sheets track & merge in this single file automatically
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -286,6 +310,8 @@
                         <button onclick="setFilter('Delivered')" id="filter-btn-delivered" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-200">Delivered (<span id="count-delivered">0</span>)</button>
                         <button onclick="setFilter('In Transit')" id="filter-btn-transit" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-200">In Transit (<span id="count-transit">0</span>)</button>
                         <button onclick="setFilter('Out for Delivery')" id="filter-btn-ofd" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-200">Out for Delivery (<span id="count-ofd">0</span>)</button>
+                        <button onclick="setFilter('dtdc')" id="filter-btn-dtdc" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100">🚚 DTDC (<span id="count-dtdc">0</span>)</button>
+                        <button onclick="setFilter('trackon')" id="filter-btn-trackon" class="filter-tab px-3 py-1.5 text-xs font-medium rounded-lg text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100">📦 Trackon (<span id="count-trackon">0</span>)</button>
                     </div>
 
                     <!-- Search and Export Buttons -->
@@ -326,6 +352,7 @@
                         <thead class="bg-slate-100 text-slate-600 uppercase font-semibold border-b border-slate-200 tracking-wider">
                             <tr>
                                 <th class="py-3 px-4 w-12 text-center">#</th>
+                                <th class="py-3 px-4 w-32">Courier / Sheet</th>
                                 <th class="py-3 px-4">Consignment / AWB</th>
                                 <th class="py-3 px-4">Live Status</th>
                                 <th class="py-3 px-4">EDD</th>
@@ -358,12 +385,23 @@
     <!-- Frontend Logic -->
     <script>
         let currentTab = 'excel';
-        let currentCourier = 'dtdc'; // 'dtdc' or 'trackon'
+        let currentCourier = 'both'; // 'both', 'dtdc', or 'trackon'
         let parsedExcelData = null;
         let originalFileArrayBuffer = null;
         let originalFileName = '';
         let allResults = [];
         let activeFilter = 'all';
+
+        function parseDMY(s) {
+            if (!s || typeof s !== 'string') return 0;
+            const parts = s.split(/[.\/]/).map(Number);
+            if (parts.length < 3) return 0;
+            const d = parts[0];
+            const m = parts[1];
+            let y = parts[2];
+            if (y < 100) y += 2000;
+            return new Date(y, m - 1, d).getTime();
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('paste-input').addEventListener('input', updatePasteCount);
@@ -396,18 +434,27 @@
 
         function setCourier(courier) {
             currentCourier = courier;
+            const btnBoth = document.getElementById('courier-btn-both');
             const btnDtdc = document.getElementById('courier-btn-dtdc');
             const btnTrackon = document.getElementById('courier-btn-trackon');
             const indicator = document.getElementById('courier-indicator-badge');
 
-            if (courier === 'trackon') {
-                btnTrackon.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm bg-amber-500 text-white flex items-center gap-1.5";
-                btnDtdc.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5";
+            if (courier === 'both') {
+                if (btnBoth) btnBoth.className = "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm bg-gradient-to-r from-blue-600 to-amber-500 text-white flex items-center gap-1.5";
+                if (btnDtdc) btnDtdc.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5";
+                if (btnTrackon) btnTrackon.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5";
+                indicator.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Tracking Provider: <strong>Both Couriers (MIA-2 & TRACKON)</strong></span>';
+                indicator.className = "text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1.5";
+            } else if (courier === 'trackon') {
+                if (btnBoth) btnBoth.className = "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5";
+                if (btnTrackon) btnTrackon.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm bg-amber-500 text-white flex items-center gap-1.5";
+                if (btnDtdc) btnDtdc.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5";
                 indicator.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span>Tracking Provider: <strong>Trackon Couriers</strong> (TRACKON Sheet)</span>';
                 indicator.className = "text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center gap-1.5";
             } else {
-                btnDtdc.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm bg-dtdc-blue text-white flex items-center gap-1.5";
-                btnTrackon.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5";
+                if (btnBoth) btnBoth.className = "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5";
+                if (btnDtdc) btnDtdc.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm bg-dtdc-blue text-white flex items-center gap-1.5";
+                if (btnTrackon) btnTrackon.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-300 hover:text-white flex items-center gap-1.5";
                 indicator.innerHTML = '<span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span><span>Tracking Provider: <strong>DTDC Express</strong> (MIA-2 Sheet)</span>';
                 indicator.className = "text-xs font-semibold px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 flex items-center gap-1.5";
             }
@@ -415,7 +462,7 @@
             // If an Excel file is already loaded and contains courier data
             if (parsedExcelData) {
                 const cData = (parsedExcelData.couriers && parsedExcelData.couriers[courier]) ? parsedExcelData.couriers[courier] : parsedExcelData;
-                if (cData && cData.sheet) {
+                if (cData) {
                     updateCourierDateSelector(cData);
                 }
             }
@@ -432,12 +479,32 @@
                     sel.appendChild(el);
                 });
                 sel.selectedIndex = 0;
-                parsedExcelData.activeNumbers = cData.date_options[0].numbers;
-                document.getElementById('file-stats-display').innerText = `Ready to track ${cData.date_options[0].count} shipments for ${cData.date_options[0].value} (sheet: ${cData.sheet})`;
+                applyDateOption(cData.date_options[0], cData);
             } else {
                 parsedExcelData.activeNumbers = cData.numbers || [];
-                document.getElementById('file-stats-display').innerText = `${parsedExcelData.activeNumbers.length} shipments ready to track (sheet: ${cData.sheet})`;
+                parsedExcelData.activeDtdcNumbers = cData.dtdc_numbers || [];
+                parsedExcelData.activeTrackonNumbers = cData.trackon_numbers || [];
+                document.getElementById('file-stats-display').innerText = `${parsedExcelData.activeNumbers.length} shipments ready to track (${cData.sheet || 'selected sheets'})`;
             }
+        }
+
+        function changeDateSelection() {
+            if (!parsedExcelData) return;
+            const cData = (parsedExcelData.couriers && parsedExcelData.couriers[currentCourier]) ? parsedExcelData.couriers[currentCourier] : parsedExcelData;
+            if (!cData || !cData.date_options) return;
+            const selIdx = document.getElementById('date-selector').value;
+            const opt = cData.date_options[selIdx];
+            if (opt) {
+                applyDateOption(opt, cData);
+            }
+        }
+
+        function applyDateOption(opt, cData) {
+            parsedExcelData.activeNumbers = opt.numbers;
+            parsedExcelData.activeDtdcNumbers = opt.dtdc_numbers || [];
+            parsedExcelData.activeTrackonNumbers = opt.trackon_numbers || [];
+            const scopeLabel = currentCourier === 'both' ? 'Both MIA-2 & TRACKON sheets' : `Sheet: ${cData.sheet}`;
+            document.getElementById('file-stats-display').innerText = `Ready to track ${opt.count} shipments for ${opt.value} (${scopeLabel})`;
         }
 
         function switchTab(tab) {
@@ -604,8 +671,11 @@
                 latest_date: latestDate,
                 date_options: dateOptions,
                 numbers: defaultNumbers,
+                dtdc_numbers: courierType === 'dtdc' ? defaultNumbers : [],
+                trackon_numbers: courierType === 'trackon' ? defaultNumbers : [],
                 count: defaultNumbers.length,
-                all_numbers: allDockets
+                all_numbers: allDockets,
+                date_dockets: dateDockets
             };
         }
 
@@ -634,7 +704,7 @@
             uploadBox.classList.remove('hidden');
             uploadBarFill.style.width = '20%';
             uploadPercentText.innerText = '20%';
-            uploadLabel.innerText = 'Reading file into memory (Zero Upload)...';
+            uploadLabel.innerText = 'Reading single file into memory (Zero Upload)...';
             uploadFilenameText.innerText = file.name;
 
             const totalMB = (file.size / (1024 * 1024)).toFixed(2);
@@ -657,7 +727,7 @@
                     originalFileArrayBuffer = evt.target.result;
                     originalFileName = file.name;
 
-                    uploadLabel.innerText = 'Analyzing sheets (MIA-2 & TRACKON)...';
+                    uploadLabel.innerText = 'Scanning sheets (MIA-2 for DTDC & TRACKON for Trackon)...';
                     uploadBarFill.style.width = '85%';
                     uploadPercentText.innerText = '85%';
                     uploadSizeText.innerText = `${totalMB} MB / ${totalMB} MB`;
@@ -719,18 +789,106 @@
                         }
                     }
 
-                    let activeCourier = currentCourier;
-                    if (currentCourier === 'trackon') {
-                        if (!trackonData && dtdcData) activeCourier = 'dtdc';
-                    } else {
-                        if (!dtdcData && trackonData) activeCourier = 'trackon';
+                    // Build unified Both Data
+                    let bothData = null;
+                    if (dtdcData && trackonData) {
+                        const dtdcDates = dtdcData.date_dockets || {};
+                        const trackonDates = trackonData.date_dockets || {};
+                        const allDateKeys = [...new Set([
+                            ...Object.keys(dtdcDates),
+                            ...Object.keys(trackonDates)
+                        ])].filter(d => d !== "Unknown");
+
+                        allDateKeys.sort((a, b) => parseDMY(a) - parseDMY(b));
+
+                        const bothDateOptions = [];
+                        const latestDate = allDateKeys.length > 0 ? allDateKeys[allDateKeys.length - 1] : null;
+
+                        if (latestDate) {
+                            const dList = dtdcDates[latestDate] || [];
+                            const tList = trackonDates[latestDate] || [];
+                            bothDateOptions.push({
+                                label: `Latest Date: ${latestDate} (${dList.length + tList.length} total: ${dList.length} DTDC + ${tList.length} Trackon)`,
+                                value: latestDate,
+                                count: dList.length + tList.length,
+                                dtdc_numbers: dList,
+                                trackon_numbers: tList,
+                                numbers: [...dList, ...tList]
+                            });
+                        }
+
+                        if (allDateKeys.length >= 2) {
+                            const last3 = allDateKeys.slice(-3);
+                            const dComb = [];
+                            const tComb = [];
+                            for (const d of last3) {
+                                dComb.push(...(dtdcDates[d] || []));
+                                tComb.push(...(trackonDates[d] || []));
+                            }
+                            bothDateOptions.push({
+                                label: `Last 3 Days (${dComb.length + tComb.length} total: ${dComb.length} DTDC + ${tComb.length} Trackon)`,
+                                value: 'last_3',
+                                count: dComb.length + tComb.length,
+                                dtdc_numbers: dComb,
+                                trackon_numbers: tComb,
+                                numbers: [...dComb, ...tComb]
+                            });
+                        }
+
+                        if (allDateKeys.length >= 4) {
+                            const last7 = allDateKeys.slice(-7);
+                            const dComb = [];
+                            const tComb = [];
+                            for (const d of last7) {
+                                dComb.push(...(dtdcDates[d] || []));
+                                tComb.push(...(trackonDates[d] || []));
+                            }
+                            bothDateOptions.push({
+                                label: `Last 7 Days (${dComb.length + tComb.length} total: ${dComb.length} DTDC + ${tComb.length} Trackon)`,
+                                value: 'last_7',
+                                count: dComb.length + tComb.length,
+                                dtdc_numbers: dComb,
+                                trackon_numbers: tComb,
+                                numbers: [...dComb, ...tComb]
+                            });
+                        }
+
+                        const reversedDates = allDateKeys.slice(-7).reverse();
+                        for (const d of reversedDates) {
+                            if (d !== latestDate) {
+                                const dList = dtdcDates[d] || [];
+                                const tList = trackonDates[d] || [];
+                                bothDateOptions.push({
+                                    label: `Date ${d} (${dList.length + tList.length} total: ${dList.length} DTDC + ${tList.length} Trackon)`,
+                                    value: d,
+                                    count: dList.length + tList.length,
+                                    dtdc_numbers: dList,
+                                    trackon_numbers: tList,
+                                    numbers: [...dList, ...tList]
+                                });
+                            }
+                        }
+
+                        bothData = {
+                            sheet: 'Both (MIA-2 & TRACKON)',
+                            total_dockets: (dtdcData.total_dockets || 0) + (trackonData.total_dockets || 0),
+                            latest_date: latestDate,
+                            date_options: bothDateOptions,
+                            numbers: bothDateOptions.length > 0 ? bothDateOptions[0].numbers : [],
+                            dtdc_numbers: bothDateOptions.length > 0 ? bothDateOptions[0].dtdc_numbers : [],
+                            trackon_numbers: bothDateOptions.length > 0 ? bothDateOptions[0].trackon_numbers : [],
+                            count: bothDateOptions.length > 0 ? bothDateOptions[0].count : 0
+                        };
                     }
+
+                    let activeCourier = bothData ? 'both' : (dtdcData ? 'dtdc' : 'trackon');
 
                     parsedExcelData = {
                         success: true,
                         filename: file.name,
                         active_courier: activeCourier,
                         couriers: {
+                            both: bothData,
                             dtdc: dtdcData,
                             trackon: trackonData
                         }
@@ -742,14 +900,10 @@
                     dropZone.classList.remove('opacity-50', 'pointer-events-none');
 
                     document.getElementById('file-name-display').innerText = file.name;
+                    document.getElementById('count-detected-dtdc').innerText = dtdcData ? dtdcData.total_dockets.toLocaleString() : '0';
+                    document.getElementById('count-detected-trackon').innerText = trackonData ? trackonData.total_dockets.toLocaleString() : '0';
 
-                    if (activeCourier !== currentCourier) {
-                        setCourier(activeCourier);
-                    } else {
-                        const cData = parsedExcelData.couriers[currentCourier] || dtdcData || trackonData;
-                        updateCourierDateSelector(cData);
-                    }
-
+                    setCourier(activeCourier);
                     fileInfoBox.classList.remove('hidden');
                 } catch (err) {
                     uploadBox.classList.add('hidden');
@@ -765,19 +919,6 @@
             };
 
             reader.readAsArrayBuffer(file);
-        }
-
-
-        function changeDateSelection() {
-            if (!parsedExcelData) return;
-            const cData = (parsedExcelData.couriers && parsedExcelData.couriers[currentCourier]) ? parsedExcelData.couriers[currentCourier] : parsedExcelData;
-            if (!cData || !cData.date_options) return;
-            const selIdx = document.getElementById('date-selector').value;
-            const opt = cData.date_options[selIdx];
-            if (opt) {
-                parsedExcelData.activeNumbers = opt.numbers;
-                document.getElementById('file-stats-display').innerText = `Ready to track ${opt.count} shipments for ${opt.value} (sheet: ${cData.sheet})`;
-            }
         }
 
         function showError(msg) {
@@ -821,6 +962,9 @@
             const numbers = getActiveNumbers();
             if (!numbers || numbers.length === 0) return;
 
+            allResults = [];
+            document.getElementById('results-tbody').innerHTML = '';
+
             const trackBtn = document.getElementById('track-btn');
             const trackBtnText = document.getElementById('track-btn-text');
             const progressBox = document.getElementById('progress-box');
@@ -839,11 +983,25 @@
             progressPercentText.innerText = `0%`;
             progressText.innerText = `Starting automated tracking for ${numbers.length} consignments...`;
 
+            const requestPayload = {
+                numbers: numbers,
+                courier: currentCourier
+            };
+
+            if (currentTab === 'excel' && parsedExcelData) {
+                if (parsedExcelData.activeDtdcNumbers && parsedExcelData.activeDtdcNumbers.length > 0) {
+                    requestPayload.dtdc_numbers = parsedExcelData.activeDtdcNumbers;
+                }
+                if (parsedExcelData.activeTrackonNumbers && parsedExcelData.activeTrackonNumbers.length > 0) {
+                    requestPayload.trackon_numbers = parsedExcelData.activeTrackonNumbers;
+                }
+            }
+
             try {
                 const res = await fetch('/api/track-stream', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ numbers: numbers, courier: currentCourier })
+                    body: JSON.stringify(requestPayload)
                 });
 
                 if (!res.ok) {
@@ -927,12 +1085,17 @@
             document.getElementById('results-container').classList.remove('hidden');
 
             let delivered = 0, transit = 0, ofd = 0, issues = 0;
+            let dtdcCount = 0, trackonCount = 0;
             allResults.forEach(r => {
                 const cat = r.category;
                 if (cat === 'Delivered') delivered++;
                 else if (cat === 'Out for Delivery') ofd++;
                 else if (cat === 'In Transit' || cat === 'Booked') transit++;
                 else issues++;
+
+                const isTrackon = (r.courier === 'trackon') || (r.sheet === 'TRACKON') || (/^[0-9]{10,12}$/.test(r.awb));
+                if (isTrackon) trackonCount++;
+                else dtdcCount++;
             });
 
             document.getElementById('stat-total').innerText = allResults.length;
@@ -945,6 +1108,8 @@
             document.getElementById('count-delivered').innerText = delivered;
             document.getElementById('count-transit').innerText = transit;
             document.getElementById('count-ofd').innerText = ofd;
+            document.getElementById('count-dtdc').innerText = dtdcCount;
+            document.getElementById('count-trackon').innerText = trackonCount;
 
             applyFilters();
         }
@@ -964,6 +1129,10 @@
                 document.getElementById('filter-btn-transit').className = "filter-tab px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white shadow-sm";
             } else if (filter === 'Out for Delivery') {
                 document.getElementById('filter-btn-ofd').className = "filter-tab px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-600 text-white shadow-sm";
+            } else if (filter === 'dtdc') {
+                document.getElementById('filter-btn-dtdc').className = "filter-tab px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-700 text-white shadow-sm";
+            } else if (filter === 'trackon') {
+                document.getElementById('filter-btn-trackon').className = "filter-tab px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-600 text-white shadow-sm";
             }
 
             applyFilters();
@@ -977,12 +1146,16 @@
             let visibleCount = 0;
 
             allResults.forEach((r, idx) => {
-                if (activeFilter !== 'all' && r.category !== activeFilter) {
+                const isTrackonItem = (r.courier === 'trackon') || (r.sheet === 'TRACKON') || (/^[0-9]{10,12}$/.test(r.awb));
+
+                if (activeFilter === 'dtdc' && isTrackonItem) return;
+                if (activeFilter === 'trackon' && !isTrackonItem) return;
+                if (activeFilter !== 'all' && activeFilter !== 'dtdc' && activeFilter !== 'trackon' && r.category !== activeFilter) {
                     return;
                 }
 
                 if (query) {
-                    const matchStr = `${r.awb} ${r.reference_no} ${r.status} ${r.origin} ${r.destination} ${r.latest_update}`.toLowerCase();
+                    const matchStr = `${r.awb} ${r.reference_no} ${r.status} ${r.origin} ${r.destination} ${r.latest_update} ${isTrackonItem ? 'trackon' : 'dtdc'}`.toLowerCase();
                     if (!matchStr.includes(query)) return;
                 }
 
@@ -1006,13 +1179,18 @@
                     iconClass = "bi-exclamation-triangle-fill text-rose-500";
                 }
 
-                const trackUrl = currentCourier === 'trackon'
+                const trackUrl = isTrackonItem
                     ? 'https://trackon.in/courier-tracking-Multi'
                     : `https://www.dtdc.com/track-your-shipment/?awb=${encodeURIComponent(r.awb)}`;
-                const trackTitle = currentCourier === 'trackon' ? 'Open Trackon Website' : 'Open on DTDC website';
+                const trackTitle = isTrackonItem ? 'Open on Trackon Website' : 'Open on DTDC website';
+
+                const courierBadge = isTrackonItem
+                    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">📦 TRACKON</span>`
+                    : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300">🚚 MIA-2</span>`;
 
                 tr.innerHTML = `
                     <td class="py-3 px-4 text-center font-mono text-slate-400">${idx + 1}</td>
+                    <td class="py-3 px-4">${courierBadge}</td>
                     <td class="py-3 px-4">
                         <div class="font-bold font-mono text-slate-900">${r.awb}</div>
                         ${r.reference_no && r.reference_no !== '-' ? `<div class="text-[11px] text-slate-400">Ref: ${r.reference_no}</div>` : ''}
@@ -1065,25 +1243,12 @@
             banner.className = 'px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between';
             banner.classList.remove('hidden');
             spinner.classList.remove('hidden');
-            bannerText.innerText = '⏳ Initializing client-side ExcelJS engine (all 19 sheets)...';
+            bannerText.innerText = '⏳ Initializing client-side ExcelJS engine (preserving all other sheets untouched)...';
 
             await new Promise(r => setTimeout(r, 60));
 
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.load(originalFileArrayBuffer);
-
-            const targetSheetName = currentCourier === 'trackon' ? 'TRACKON' : 'MIA-2';
-            let ws = workbook.getWorksheet(targetSheetName);
-            if (!ws) {
-                ws = workbook.worksheets.find(s => s.name.trim().toUpperCase().includes(targetSheetName));
-            }
-
-            if (!ws) {
-                throw new Error(`Target sheet "${targetSheetName}" not found in workbook.`);
-            }
-
-            bannerText.innerText = `⏳ Merging live tracking status into sheet "${ws.name}"...`;
-            await new Promise(r => setTimeout(r, 60));
 
             const statusMap = {};
             allResults.forEach(r => {
@@ -1108,91 +1273,119 @@
             const actCol = 13;
             const timeCol = 14;
 
-            const hStatus = ws.getCell(1, statusCol);
-            hStatus.value = 'Live Status';
-            hStatus.fill = headerFill;
-            hStatus.font = headerFont;
+            // Determine which sheets to merge into
+            const targetSheets = [];
+            if (currentCourier === 'both' || currentCourier === 'dtdc') {
+                let wsMIA = workbook.getWorksheet('MIA-2');
+                if (!wsMIA) wsMIA = workbook.worksheets.find(s => s.name.trim().toUpperCase().includes('MIA-2'));
+                if (wsMIA) targetSheets.push({ ws: wsMIA, type: 'dtdc' });
+            }
+            if (currentCourier === 'both' || currentCourier === 'trackon') {
+                let wsTrackon = workbook.getWorksheet('TRACKON');
+                if (!wsTrackon) wsTrackon = workbook.worksheets.find(s => s.name.trim().toUpperCase().includes('TRACKON'));
+                if (wsTrackon) targetSheets.push({ ws: wsTrackon, type: 'trackon' });
+            }
 
-            const hEdd = ws.getCell(1, eddCol);
-            hEdd.value = 'EDD';
-            hEdd.fill = headerFill;
-            hEdd.font = headerFont;
+            if (targetSheets.length === 0) {
+                throw new Error('Neither "MIA-2" nor "TRACKON" sheets were found in the workbook.');
+            }
 
-            const hAct = ws.getCell(1, actCol);
-            hAct.value = 'Latest Activity';
-            hAct.fill = headerFill;
-            hAct.font = headerFont;
+            let totalMatched = 0;
+            const updatedSheetNames = [];
 
-            const hTime = ws.getCell(1, timeCol);
-            hTime.value = 'Activity Date/Time';
-            hTime.fill = headerFill;
-            hTime.font = headerFont;
+            for (const { ws, type } of targetSheets) {
+                bannerText.innerText = `⏳ Merging live tracking status into sheet "${ws.name}"...`;
+                await new Promise(r => setTimeout(r, 60));
 
-            let matchedCount = 0;
+                const hStatus = ws.getCell(1, statusCol);
+                hStatus.value = 'Live Status';
+                hStatus.fill = headerFill;
+                hStatus.font = headerFont;
 
-            ws.eachRow((row, rowNumber) => {
-                if (rowNumber === 1) return;
-                let rowDocket = null;
-                let docketCell = null;
+                const hEdd = ws.getCell(1, eddCol);
+                hEdd.value = 'EDD';
+                hEdd.fill = headerFill;
+                hEdd.font = headerFont;
 
-                for (let colIdx = 1; colIdx <= 10; colIdx++) {
-                    const cell = row.getCell(colIdx);
-                    if (cell && cell.value !== null && cell.value !== undefined) {
-                        const valStr = String(cell.value).trim();
-                        if (currentCourier === 'trackon') {
-                            if (/^[0-9]{10,12}$/.test(valStr)) {
-                                rowDocket = valStr;
-                                docketCell = cell;
-                                break;
-                            }
-                        } else {
-                            if (/^[A-Za-z]{1,4}[0-9]{6,12}$/i.test(valStr)) {
-                                rowDocket = valStr.toUpperCase();
-                                docketCell = cell;
-                                break;
+                const hAct = ws.getCell(1, actCol);
+                hAct.value = 'Latest Activity';
+                hAct.fill = headerFill;
+                hAct.font = headerFont;
+
+                const hTime = ws.getCell(1, timeCol);
+                hTime.value = 'Activity Date/Time';
+                hTime.fill = headerFill;
+                hTime.font = headerFont;
+
+                let sheetMatched = 0;
+
+                ws.eachRow((row, rowNumber) => {
+                    if (rowNumber === 1) return;
+                    let rowDocket = null;
+                    let docketCell = null;
+
+                    for (let colIdx = 1; colIdx <= 10; colIdx++) {
+                        const cell = row.getCell(colIdx);
+                        if (cell && cell.value !== null && cell.value !== undefined) {
+                            const valStr = String(cell.value).trim();
+                            if (type === 'trackon') {
+                                if (/^[0-9]{10,12}$/.test(valStr)) {
+                                    rowDocket = valStr;
+                                    docketCell = cell;
+                                    break;
+                                }
+                            } else {
+                                if (/^[A-Za-z]{1,4}[0-9]{6,12}$/i.test(valStr)) {
+                                    rowDocket = valStr.toUpperCase();
+                                    docketCell = cell;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
 
-                if (rowDocket && statusMap[rowDocket]) {
-                    matchedCount++;
-                    const info = statusMap[rowDocket];
-                    const cStatus = row.getCell(statusCol);
-                    cStatus.value = info.status || '';
-                    cStatus.font = statusFont;
+                    if (rowDocket && statusMap[rowDocket]) {
+                        sheetMatched++;
+                        const info = statusMap[rowDocket];
+                        const cStatus = row.getCell(statusCol);
+                        cStatus.value = info.status || '';
+                        cStatus.font = statusFont;
 
-                    const cat = info.category || '';
-                    if (cat === 'Delivered') {
-                        cStatus.fill = fillDelivered;
-                        cStatus.font = fontDelivered;
-                        if (docketCell) {
-                            docketCell.fill = fillDelivered;
-                            docketCell.font = fontDelivered;
+                        const cat = info.category || '';
+                        if (cat === 'Delivered') {
+                            cStatus.fill = fillDelivered;
+                            cStatus.font = fontDelivered;
+                            if (docketCell) {
+                                docketCell.fill = fillDelivered;
+                                docketCell.font = fontDelivered;
+                            }
+                        } else if (cat === 'Out for Delivery') {
+                            cStatus.fill = fillOfd;
+                        } else if (cat === 'In Transit') {
+                            cStatus.fill = fillTransit;
+                        } else if (cat === 'Issue/RTO') {
+                            cStatus.fill = fillIssue;
                         }
-                    } else if (cat === 'Out for Delivery') {
-                        cStatus.fill = fillOfd;
-                    } else if (cat === 'In Transit') {
-                        cStatus.fill = fillTransit;
-                    } else if (cat === 'Issue/RTO') {
-                        cStatus.fill = fillIssue;
+
+                        const cEdd = row.getCell(eddCol);
+                        cEdd.value = info.edd || '-';
+                        cEdd.font = regularFont;
+
+                        const cAct = row.getCell(actCol);
+                        cAct.value = info.latest_update || '-';
+                        cAct.font = regularFont;
+
+                        const cTime = row.getCell(timeCol);
+                        cTime.value = info.latest_time || '-';
+                        cTime.font = regularFont;
                     }
+                });
 
-                    const cEdd = row.getCell(eddCol);
-                    cEdd.value = info.edd || '-';
-                    cEdd.font = regularFont;
+                totalMatched += sheetMatched;
+                updatedSheetNames.push(`${ws.name} (${sheetMatched})`);
+            }
 
-                    const cAct = row.getCell(actCol);
-                    cAct.value = info.latest_update || '-';
-                    cAct.font = regularFont;
-
-                    const cTime = row.getCell(timeCol);
-                    cTime.value = info.latest_time || '-';
-                    cTime.font = regularFont;
-                }
-            });
-
-            bannerText.innerText = `⏳ Generating final updated Excel file (${matchedCount} consignments merged)...`;
+            bannerText.innerText = `⏳ Generating final updated Excel file (${totalMatched} consignments merged across ${updatedSheetNames.join(', ')})...`;
             await new Promise(r => setTimeout(r, 60));
 
             const buffer = await workbook.xlsx.writeBuffer();
@@ -1208,7 +1401,7 @@
 
             spinner.classList.add('hidden');
             banner.className = 'px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between';
-            bannerText.innerHTML = `<span><strong>✅ Merge Complete!</strong> Updated ${matchedCount} consignments in sheet <code>${ws.name}</code>. Delivered dockets highlighted in green.</span>`;
+            bannerText.innerHTML = `<span><strong>✅ Merge Complete!</strong> Updated ${totalMatched} consignments in sheets <code>${updatedSheetNames.join(', ')}</code>. All other sheets remain completely untouched. Delivered dockets highlighted in bold green.</span>`;
             setTimeout(() => {
                 banner.classList.add('hidden');
             }, 8000);
@@ -1275,7 +1468,7 @@
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = currentCourier === 'trackon' ? 'Trackon_Tracking_Summary.xlsx' : 'DTDC_Tracking_Summary.xlsx';
+                a.download = currentCourier === 'both' ? 'Combined_Tracking_Summary.xlsx' : (currentCourier === 'trackon' ? 'Trackon_Tracking_Summary.xlsx' : 'DTDC_Tracking_Summary.xlsx');
                 document.body.appendChild(a);
                 a.click();
                 a.remove();

@@ -534,42 +534,92 @@ def track_trackon_consignments(numbers):
 
 @app.route('/api/track-stream', methods=['POST'])
 def track_stream():
-    """Stream live tracking results in safe 25-number chunks with automated captcha solving."""
+    """Stream live tracking results in safe 25-number chunks with automated captcha solving, supporting DTDC, Trackon, or Both simultaneously."""
     data = request.json or {}
     raw_numbers = data.get('numbers', [])
-    courier = data.get('courier', 'dtdc').lower()
+    req_dtdc = data.get('dtdc_numbers')
+    req_trackon = data.get('trackon_numbers')
+    courier = data.get('courier', 'both').lower()
 
-    clean_nums = []
-    for n in raw_numbers:
-        cleaned = re.sub(r'[^a-zA-Z0-9]', '', str(n).strip())
-        if cleaned and cleaned not in clean_nums:
-            clean_nums.append(cleaned)
+    dtdc_nums = []
+    trackon_nums = []
 
-    if not clean_nums:
+    if req_dtdc is not None or req_trackon is not None:
+        for n in (req_dtdc or []):
+            c = re.sub(r'[^a-zA-Z0-9]', '', str(n).strip()).upper()
+            if c and c not in dtdc_nums:
+                dtdc_nums.append(c)
+        for n in (req_trackon or []):
+            c = re.sub(r'[^a-zA-Z0-9]', '', str(n).strip())
+            if c and c not in trackon_nums:
+                trackon_nums.append(c)
+    else:
+        for n in raw_numbers:
+            cleaned = re.sub(r'[^a-zA-Z0-9]', '', str(n).strip())
+            if not cleaned:
+                continue
+            if courier == 'dtdc':
+                if cleaned.upper() not in dtdc_nums:
+                    dtdc_nums.append(cleaned.upper())
+            elif courier == 'trackon':
+                if cleaned not in trackon_nums:
+                    trackon_nums.append(cleaned)
+            else:  # courier == 'both'
+                if re.match(r'^[0-9]{10,12}$', cleaned):
+                    if cleaned not in trackon_nums:
+                        trackon_nums.append(cleaned)
+                else:
+                    if cleaned.upper() not in dtdc_nums:
+                        dtdc_nums.append(cleaned.upper())
+
+    total = len(trackon_nums) + len(dtdc_nums)
+    if total == 0:
         return jsonify({'success': False, 'error': 'No valid tracking numbers provided.'}), 400
 
     def generate_events():
-        total = len(clean_nums)
         CHUNK_SIZE = 25
         completed = 0
         all_accumulated = []
 
-        for i in range(0, total, CHUNK_SIZE):
-            chunk = clean_nums[i:i + CHUNK_SIZE]
-            batch_num = (i // CHUNK_SIZE) + 1
-            total_batches = (total + CHUNK_SIZE - 1) // CHUNK_SIZE
+        # Phase 1: Track Trackon consignments (if any)
+        if trackon_nums:
+            total_trackon_batches = (len(trackon_nums) + CHUNK_SIZE - 1) // CHUNK_SIZE
+            for i in range(0, len(trackon_nums), CHUNK_SIZE):
+                chunk = trackon_nums[i:i + CHUNK_SIZE]
+                batch_num = (i // CHUNK_SIZE) + 1
 
-            if courier == 'trackon':
-                yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking batch {batch_num} of {total_batches} ({len(chunk)} parcels via Trackon)...', 'completed': completed, 'total': total})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking Trackon batch {batch_num} of {total_trackon_batches} ({len(chunk)} parcels)...', 'completed': completed, 'total': total})}\n\n"
                 try:
                     chunk_results = track_trackon_consignments(chunk)
                 except Exception as e:
                     print(f"Error tracking Trackon chunk: {e}")
                     chunk_results = [{'awb': n, 'category': 'Issue/RTO', 'status': f'Error: {str(e)[:30]}', 'edd': '-', 'origin': '-', 'destination': '-', 'latest_update': '-', 'latest_time': '-'} for n in chunk]
-            else:
-                # DTDC Tracking
-                # Step 1: Automatically solve captcha & get verified token
-                yield f"data: {json.dumps({'type': 'status', 'message': f'Verifying security token for batch {batch_num} of {total_batches}...', 'completed': completed, 'total': total})}\n\n"
+
+                for r in chunk_results:
+                    r['courier'] = 'trackon'
+                    r['sheet'] = 'TRACKON'
+
+                completed += len(chunk)
+                all_accumulated.extend(chunk_results)
+
+                payload = {
+                    'type': 'progress',
+                    'completed': completed,
+                    'total': total,
+                    'percent': int((completed / total) * 100),
+                    'new_results': chunk_results
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                time.sleep(0.2)
+
+        # Phase 2: Track DTDC consignments (if any)
+        if dtdc_nums:
+            total_dtdc_batches = (len(dtdc_nums) + CHUNK_SIZE - 1) // CHUNK_SIZE
+            for i in range(0, len(dtdc_nums), CHUNK_SIZE):
+                chunk = dtdc_nums[i:i + CHUNK_SIZE]
+                batch_num = (i // CHUNK_SIZE) + 1
+
+                yield f"data: {json.dumps({'type': 'status', 'message': f'Verifying DTDC security token for batch {batch_num} of {total_dtdc_batches}...', 'completed': completed, 'total': total})}\n\n"
 
                 token = get_verified_token_auto(max_attempts=8)
                 if not token:
@@ -578,8 +628,7 @@ def track_stream():
                     if not token:
                         continue
 
-                # Step 2: Query DTDC for this chunk
-                yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking batch {batch_num} of {total_batches} ({len(chunk)} parcels via DTDC)...', 'completed': completed, 'total': total})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'message': f'Tracking DTDC batch {batch_num} of {total_dtdc_batches} ({len(chunk)} parcels)...', 'completed': completed, 'total': total})}\n\n"
 
                 try:
                     pull_res = pull_dtdc_details(chunk, token)
@@ -589,22 +638,25 @@ def track_stream():
                     else:
                         chunk_results = parse_dtdc_html("", requested_numbers=chunk)
                 except Exception as e:
-                    print(f"Error tracking chunk: {e}")
+                    print(f"Error tracking DTDC chunk: {e}")
                     chunk_results = parse_dtdc_html("", requested_numbers=chunk)
 
-            completed += len(chunk)
-            all_accumulated.extend(chunk_results)
+                for r in chunk_results:
+                    r['courier'] = 'dtdc'
+                    r['sheet'] = 'MIA-2'
 
-            # Yield progress event with new batch results
-            payload = {
-                'type': 'progress',
-                'completed': completed,
-                'total': total,
-                'percent': int((completed / total) * 100),
-                'new_results': chunk_results
-            }
-            yield f"data: {json.dumps(payload)}\n\n"
-            time.sleep(0.3)
+                completed += len(chunk)
+                all_accumulated.extend(chunk_results)
+
+                payload = {
+                    'type': 'progress',
+                    'completed': completed,
+                    'total': total,
+                    'percent': int((completed / total) * 100),
+                    'new_results': chunk_results
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                time.sleep(0.2)
 
         # Finished all batches
         yield f"data: {json.dumps({'type': 'done', 'total': total, 'count': len(all_accumulated)})}\n\n"
@@ -815,68 +867,74 @@ def export_excel():
                 fill_ofd = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
                 fill_issue = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
 
-                # Target sheet: TRACKON for Trackon, MIA-2 for DTDC
-                target_sheet_name = 'TRACKON' if courier == 'trackon' else 'MIA-2'
-                target_sheets = [s for s in wb.sheetnames if s.strip().upper() == target_sheet_name]
-                if not target_sheets:
-                    target_sheets = [s for s in wb.sheetnames if target_sheet_name in s.strip().upper()]
+                # Target sheets to update: both TRACKON and MIA-2 if courier == 'both'
+                targets = []
+                if courier in ['trackon', 'both']:
+                    targets.append(('TRACKON', 'trackon'))
+                if courier in ['dtdc', 'both']:
+                    targets.append(('MIA-2', 'dtdc'))
 
-                for sname in target_sheets[:1]:
-                    ws = wb[sname]
-                    status_col = 11
-                    edd_col = 12
-                    act_col = 13
-                    time_col = 14
+                for target_sheet_name, c_type in targets:
+                    target_sheets = [s for s in wb.sheetnames if s.strip().upper() == target_sheet_name]
+                    if not target_sheets:
+                        target_sheets = [s for s in wb.sheetnames if target_sheet_name in s.strip().upper()]
 
-                    ws.cell(row=1, column=status_col, value="Live Status").fill = header_fill
-                    ws.cell(row=1, column=status_col).font = header_font
-                    ws.cell(row=1, column=edd_col, value="EDD").fill = header_fill
-                    ws.cell(row=1, column=edd_col).font = header_font
-                    ws.cell(row=1, column=act_col, value="Latest Activity").fill = header_fill
-                    ws.cell(row=1, column=act_col).font = header_font
-                    ws.cell(row=1, column=time_col, value="Activity Date/Time").fill = header_fill
-                    ws.cell(row=1, column=time_col).font = header_font
+                    for sname in target_sheets[:1]:
+                        ws = wb[sname]
+                        status_col = 11
+                        edd_col = 12
+                        act_col = 13
+                        time_col = 14
 
-                    for row in ws.iter_rows(min_row=2):
-                        row_idx = row[0].row
-                        row_docket = None
-                        docket_cell = None
-                        for cell in row[:10]:
-                            if cell.value:
-                                val_str = str(cell.value).strip()
-                                if courier == 'trackon':
-                                    if re.match(r'^[0-9]{10,12}$', val_str):
-                                        row_docket = val_str
-                                        docket_cell = cell
-                                        break
-                                else:
-                                    if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', val_str, re.I):
-                                        row_docket = val_str.upper()
-                                        docket_cell = cell
-                                        break
+                        ws.cell(row=1, column=status_col, value="Live Status").fill = header_fill
+                        ws.cell(row=1, column=status_col).font = header_font
+                        ws.cell(row=1, column=edd_col, value="EDD").fill = header_fill
+                        ws.cell(row=1, column=edd_col).font = header_font
+                        ws.cell(row=1, column=act_col, value="Latest Activity").fill = header_fill
+                        ws.cell(row=1, column=act_col).font = header_font
+                        ws.cell(row=1, column=time_col, value="Activity Date/Time").fill = header_fill
+                        ws.cell(row=1, column=time_col).font = header_font
 
-                        if row_docket and row_docket in status_map:
-                            info = status_map[row_docket]
-                            c_status = ws.cell(row=row_idx, column=status_col, value=info.get('status', ''))
-                            c_status.font = status_font
-                            cat = info.get('category', '')
-                            if cat == 'Delivered':
-                                c_status.fill = fill_delivered
-                                c_status.font = font_delivered
-                                # Highlight the docket number cell green when delivered!
-                                if docket_cell is not None:
-                                    docket_cell.fill = fill_delivered
-                                    docket_cell.font = font_delivered
-                            elif cat == 'Out for Delivery':
-                                c_status.fill = fill_ofd
-                            elif cat == 'In Transit':
-                                c_status.fill = fill_transit
-                            elif cat == 'Issue/RTO':
-                                c_status.fill = fill_issue
+                        for row in ws.iter_rows(min_row=2):
+                            row_idx = row[0].row
+                            row_docket = None
+                            docket_cell = None
+                            for cell in row[:10]:
+                                if cell.value:
+                                    val_str = str(cell.value).strip()
+                                    if c_type == 'trackon':
+                                        if re.match(r'^[0-9]{10,12}$', val_str):
+                                            row_docket = val_str
+                                            docket_cell = cell
+                                            break
+                                    else:
+                                        if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', val_str, re.I):
+                                            row_docket = val_str.upper()
+                                            docket_cell = cell
+                                            break
 
-                            ws.cell(row=row_idx, column=edd_col, value=info.get('edd', '-')).font = regular_font
-                            ws.cell(row=row_idx, column=act_col, value=info.get('latest_update', '-')).font = regular_font
-                            ws.cell(row=row_idx, column=time_col, value=info.get('latest_time', '-')).font = regular_font
+                            if row_docket and row_docket in status_map:
+                                info = status_map[row_docket]
+                                c_status = ws.cell(row=row_idx, column=status_col, value=info.get('status', ''))
+                                c_status.font = status_font
+                                cat = info.get('category', '')
+                                if cat == 'Delivered':
+                                    c_status.fill = fill_delivered
+                                    c_status.font = font_delivered
+                                    # Highlight the docket number cell green when delivered!
+                                    if docket_cell is not None:
+                                        docket_cell.fill = fill_delivered
+                                        docket_cell.font = font_delivered
+                                elif cat == 'Out for Delivery':
+                                    c_status.fill = fill_ofd
+                                elif cat == 'In Transit':
+                                    c_status.fill = fill_transit
+                                elif cat == 'Issue/RTO':
+                                    c_status.fill = fill_issue
+
+                                ws.cell(row=row_idx, column=edd_col, value=info.get('edd', '-')).font = regular_font
+                                ws.cell(row=row_idx, column=act_col, value=info.get('latest_update', '-')).font = regular_font
+                                ws.cell(row=row_idx, column=time_col, value=info.get('latest_time', '-')).font = regular_font
 
                 out_path = os.path.join(UPLOAD_FOLDER, 'temp_merged_export.xlsx')
                 wb.save(out_path)
@@ -895,7 +953,7 @@ def export_excel():
     # Standalone summary workbook fallback (Fast, 0.05s)
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Trackon Tracking Status" if courier == 'trackon' else "DTDC Tracking Status"
+    ws.title = "Combined Tracking Status" if courier == 'both' else ("Trackon Tracking Status" if courier == 'trackon' else "DTDC Tracking Status")
     ws.views.sheetView[0].showGridLines = True
 
     header_fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
@@ -912,7 +970,7 @@ def export_excel():
     )
 
     headers = [
-        "S.No", "Consignment / AWB No", "Reference No", "Category", 
+        "S.No", "Courier", "Consignment / AWB No", "Reference No", "Category", 
         "Live Status", "EDD", "Origin", "Destination", "Latest Activity", "Activity Date/Time"
     ]
 
@@ -936,8 +994,9 @@ def export_excel():
     for idx, r in enumerate(results, start=1):
         row_num = idx + 1
         cat = r.get('category', 'In Transit')
+        c_label = "Trackon" if r.get('courier') == 'trackon' else "DTDC"
         row_data = [
-            idx, r.get('awb', ''), r.get('reference_no', '-'), cat,
+            idx, c_label, r.get('awb', ''), r.get('reference_no', '-'), cat,
             r.get('status', ''), r.get('edd', '-'), r.get('origin', '-'),
             r.get('destination', '-'), r.get('latest_update', '-'), r.get('latest_time', '-')
         ]
@@ -947,16 +1006,16 @@ def export_excel():
             cell = ws.cell(row=row_num, column=col_idx)
             cell.font = data_font
             cell.border = thin_border
-            if col_idx in [1, 2, 3, 4, 6]:
+            if col_idx in [1, 2, 4, 5, 7]:
                 cell.alignment = center_align
             else:
                 cell.alignment = left_align
-            if col_idx == 4 and cat in cat_colors:
+            if col_idx == 5 and cat in cat_colors:
                 cell.fill = cat_colors[cat]
                 if cat == 'Delivered':
                     cell.font = Font(name="Calibri", size=10, bold=True, color="006100")
             # Highlight docket number in green when delivered
-            if col_idx == 2 and cat == 'Delivered':
+            if col_idx == 3 and cat == 'Delivered':
                 cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
                 cell.font = Font(name="Calibri", size=10, bold=True, color="006100")
 
@@ -969,7 +1028,7 @@ def export_excel():
     wb.save(buf)
     buf.seek(0)
 
-    summary_name = "Trackon_Tracking_Summary.xlsx" if courier == 'trackon' else "DTDC_Tracking_Summary.xlsx"
+    summary_name = "Combined_Tracking_Summary.xlsx" if courier == 'both' else ("Trackon_Tracking_Summary.xlsx" if courier == 'trackon' else "DTDC_Tracking_Summary.xlsx")
     return send_file(
         buf,
         as_attachment=True,
