@@ -161,10 +161,16 @@
                                     <p class="text-xs text-emerald-800 font-medium" id="file-stats-display"></p>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <label class="text-xs font-bold text-emerald-950 whitespace-nowrap">Select Date to Track:</label>
-                                <select id="date-selector" onchange="changeDateSelection()" class="text-xs bg-white border border-emerald-300 text-emerald-950 rounded-lg px-3 py-2 font-semibold focus:ring-2 focus:ring-emerald-500 shadow-sm min-w-[280px]">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <label class="text-xs font-bold text-emerald-950 whitespace-nowrap">Select Dates to Track:</label>
+                                <select id="date-selector" onchange="changeDateSelection()" class="text-xs bg-white border border-emerald-300 text-emerald-950 rounded-lg px-3 py-2 font-semibold focus:ring-2 focus:ring-emerald-500 shadow-sm min-w-[320px]">
                                 </select>
+                                <div id="custom-range-box" class="hidden flex items-center gap-1.5 bg-emerald-100/90 px-2.5 py-1 rounded-lg border border-emerald-300 text-xs">
+                                    <span class="font-bold text-emerald-950 text-[11px]">From:</span>
+                                    <select id="custom-date-from" onchange="applyCustomDateRange()" class="text-xs bg-white border border-emerald-300 rounded px-1.5 py-1 font-semibold"></select>
+                                    <span class="font-bold text-emerald-950 text-[11px]">To:</span>
+                                    <select id="custom-date-to" onchange="applyCustomDateRange()" class="text-xs bg-white border border-emerald-300 rounded px-1.5 py-1 font-semibold"></select>
+                                </div>
                             </div>
                         </div>
                         <!-- Detected sheets banner -->
@@ -545,17 +551,124 @@
             }
         }
 
+        function populateCustomDateSelectors(cData) {
+            const fromSel = document.getElementById('custom-date-from');
+            const toSel = document.getElementById('custom-date-to');
+            if (!fromSel || !toSel) return;
+            fromSel.innerHTML = '';
+            toSel.innerHTML = '';
+
+            const validDates = cData.valid_dates || [];
+            if (validDates.length === 0) return;
+
+            // validDates are chronologically sorted (oldest to newest)
+            validDates.forEach((d) => {
+                const optFrom = document.createElement('option');
+                optFrom.value = d;
+                optFrom.text = d;
+                fromSel.appendChild(optFrom);
+
+                const optTo = document.createElement('option');
+                optTo.value = d;
+                optTo.text = d;
+                toSel.appendChild(optTo);
+            });
+
+            // Default 'to' is latest date, 'from' is 7 days before latest (or first available)
+            toSel.selectedIndex = validDates.length - 1;
+            const defaultFromIdx = Math.max(0, validDates.length - 7);
+            fromSel.selectedIndex = defaultFromIdx;
+        }
+
+        function applyCustomDateRange() {
+            if (!parsedExcelData) return;
+            const cData = (parsedExcelData.couriers && parsedExcelData.couriers[currentCourier]) ? parsedExcelData.couriers[currentCourier] : parsedExcelData;
+            if (!cData || !cData.valid_dates) return;
+
+            const fromVal = document.getElementById('custom-date-from').value;
+            const toVal = document.getElementById('custom-date-to').value;
+            if (!fromVal || !toVal) return;
+
+            const fromTime = parseDMY(fromVal);
+            const toTime = parseDMY(toVal);
+            if (!fromTime || !toTime) return;
+
+            const startTime = Math.min(fromTime, toTime);
+            const endTime = Math.max(fromTime, toTime);
+
+            const inRangeDates = cData.valid_dates.filter(d => {
+                const t = parseDMY(d);
+                return t >= startTime && t <= endTime;
+            });
+
+            let combinedNumbers = [];
+            let dtdcNumbers = [];
+            let trackonNumbers = [];
+
+            if (currentCourier === 'both') {
+                const dtdcDates = cData.dtdc_dates || {};
+                const trackonDates = cData.trackon_dates || {};
+                for (const d of inRangeDates) {
+                    if (dtdcDates[d]) dtdcNumbers.push(...dtdcDates[d]);
+                    if (trackonDates[d]) trackonNumbers.push(...trackonDates[d]);
+                }
+                combinedNumbers = [...dtdcNumbers, ...trackonNumbers];
+            } else {
+                const dateDockets = cData.date_dockets || {};
+                for (const d of inRangeDates) {
+                    if (dateDockets[d]) combinedNumbers.push(...dateDockets[d]);
+                }
+                if (currentCourier === 'trackon' || cData.sheet === 'TRACKON') {
+                    trackonNumbers = combinedNumbers;
+                } else {
+                    dtdcNumbers = combinedNumbers;
+                }
+            }
+
+            parsedExcelData.activeNumbers = combinedNumbers;
+            parsedExcelData.activeDtdcNumbers = dtdcNumbers;
+            parsedExcelData.activeTrackonNumbers = trackonNumbers;
+
+            const scopeLabel = currentCourier === 'both' ? 'Both MIA-2 & TRACKON sheets' : `Sheet: ${cData.sheet}`;
+            const statsText = currentCourier === 'both'
+                ? `Custom Range (${fromVal} to ${toVal}): ${combinedNumbers.length} shipments (${dtdcNumbers.length} DTDC + ${trackonNumbers.length} Trackon, ${inRangeDates.length} days selected)`
+                : `Custom Range (${fromVal} to ${toVal}): ${combinedNumbers.length} shipments (${inRangeDates.length} days selected, ${scopeLabel})`;
+            document.getElementById('file-stats-display').innerText = statsText;
+        }
+
         function updateCourierDateSelector(cData) {
             const sel = document.getElementById('date-selector');
             sel.innerHTML = '';
+            populateCustomDateSelectors(cData);
+
             if (cData.date_options && cData.date_options.length > 0) {
+                const groups = {};
                 cData.date_options.forEach((opt, idx) => {
-                    const el = document.createElement('option');
-                    el.value = idx;
-                    el.text = opt.label;
-                    sel.appendChild(el);
+                    const grpName = opt.group || 'Options';
+                    if (!groups[grpName]) {
+                        groups[grpName] = [];
+                    }
+                    groups[grpName].push({ opt, idx });
                 });
+
+                for (const [grpName, items] of Object.entries(groups)) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = grpName;
+                    items.forEach(({ opt, idx }) => {
+                        const el = document.createElement('option');
+                        el.value = opt.is_custom ? 'custom_range' : idx;
+                        el.text = opt.label;
+                        optgroup.appendChild(el);
+                    });
+                    sel.appendChild(optgroup);
+                }
+
                 sel.selectedIndex = 0;
+                const customBox = document.getElementById('custom-range-box');
+                if (customBox) {
+                    customBox.classList.add('hidden');
+                    customBox.classList.remove('flex');
+                }
                 applyDateOption(cData.date_options[0], cData);
             } else {
                 parsedExcelData.activeNumbers = cData.numbers || [];
@@ -568,20 +681,43 @@
         function changeDateSelection() {
             if (!parsedExcelData) return;
             const cData = (parsedExcelData.couriers && parsedExcelData.couriers[currentCourier]) ? parsedExcelData.couriers[currentCourier] : parsedExcelData;
-            if (!cData || !cData.date_options) return;
-            const selIdx = document.getElementById('date-selector').value;
-            const opt = cData.date_options[selIdx];
-            if (opt) {
-                applyDateOption(opt, cData);
+            if (!cData) return;
+
+            const sel = document.getElementById('date-selector');
+            const customBox = document.getElementById('custom-range-box');
+
+            if (sel.value === 'custom_range') {
+                if (customBox) {
+                    customBox.classList.remove('hidden');
+                    customBox.classList.add('flex');
+                }
+                applyCustomDateRange();
+            } else {
+                if (customBox) {
+                    customBox.classList.add('hidden');
+                    customBox.classList.remove('flex');
+                }
+                const opt = cData.date_options ? cData.date_options[parseInt(sel.value)] : null;
+                if (opt) {
+                    applyDateOption(opt, cData);
+                }
             }
         }
 
         function applyDateOption(opt, cData) {
-            parsedExcelData.activeNumbers = opt.numbers;
-            parsedExcelData.activeDtdcNumbers = opt.dtdc_numbers || [];
-            parsedExcelData.activeTrackonNumbers = opt.trackon_numbers || [];
+            parsedExcelData.activeNumbers = opt.numbers || [];
+            if (currentCourier === 'dtdc' || cData.sheet === 'MIA-2') {
+                parsedExcelData.activeDtdcNumbers = opt.numbers || [];
+                parsedExcelData.activeTrackonNumbers = [];
+            } else if (currentCourier === 'trackon' || cData.sheet === 'TRACKON') {
+                parsedExcelData.activeDtdcNumbers = [];
+                parsedExcelData.activeTrackonNumbers = opt.numbers || [];
+            } else {
+                parsedExcelData.activeDtdcNumbers = opt.dtdc_numbers || [];
+                parsedExcelData.activeTrackonNumbers = opt.trackon_numbers || [];
+            }
             const scopeLabel = currentCourier === 'both' ? 'Both MIA-2 & TRACKON sheets' : `Sheet: ${cData.sheet}`;
-            document.getElementById('file-stats-display').innerText = `Ready to track ${opt.count} shipments for ${opt.value} (${scopeLabel})`;
+            document.getElementById('file-stats-display').innerText = `Ready to track ${opt.count || (opt.numbers ? opt.numbers.length : 0)} shipments — ${opt.label} (${scopeLabel})`;
         }
 
         function switchTab(tab) {
@@ -699,6 +835,7 @@
             const dateOptions = [];
             if (latestDate) {
                 dateOptions.push({
+                    group: 'Preset Ranges',
                     label: `Latest Date: ${latestDate} (${dateDockets[latestDate].length} dockets)`,
                     value: latestDate,
                     count: dateDockets[latestDate].length,
@@ -706,38 +843,67 @@
                 });
             }
 
-            if (validDates.length >= 2) {
-                const last3 = validDates.slice(-3);
-                const comb3 = [];
-                for (const d of last3) {
-                    comb3.push(...dateDockets[d]);
+            const presets = [
+                { days: 3, label: 'Last 3 Days' },
+                { days: 7, label: 'Last 7 Days (1 Week)' },
+                { days: 10, label: 'Last 10 Days' },
+                { days: 15, label: 'Last 15 Days (~2 Weeks)' },
+                { days: 30, label: 'Last 30 Days (~1 Month)' },
+                { days: 60, label: 'Last 60 Days (~2 Months)' }
+            ];
+
+            const seenCounts = new Set();
+            if (latestDate) seenCounts.add(dateDockets[latestDate].length);
+
+            for (const p of presets) {
+                if (validDates.length >= 2) {
+                    const sliceDays = validDates.slice(-p.days);
+                    if (sliceDays.length > 1) {
+                        const comb = [];
+                        for (const d of sliceDays) {
+                            comb.push(...dateDockets[d]);
+                        }
+                        if (!seenCounts.has(comb.length) || sliceDays.length < validDates.length) {
+                            seenCounts.add(comb.length);
+                            dateOptions.push({
+                                group: 'Preset Ranges',
+                                label: `${p.label} (${comb.length} dockets, ${sliceDays.length} days)`,
+                                value: `last_${p.days}`,
+                                count: comb.length,
+                                numbers: comb
+                            });
+                        }
+                    }
                 }
+            }
+
+            // All Available Dates preset
+            if (validDates.length > 1) {
                 dateOptions.push({
-                    label: `Last 3 Days (${comb3.length} dockets)`,
-                    value: 'last_3',
-                    count: comb3.length,
-                    numbers: comb3
+                    group: 'Preset Ranges',
+                    label: `All Available Dates in Workbook (${allDockets.length} dockets, ${validDates.length} days)`,
+                    value: 'all_dates',
+                    count: allDockets.length,
+                    numbers: allDockets
                 });
             }
 
-            if (validDates.length >= 4) {
-                const last7 = validDates.slice(-7);
-                const comb7 = [];
-                for (const d of last7) {
-                    comb7.push(...dateDockets[d]);
-                }
+            // Custom Range Option
+            if (validDates.length > 1) {
                 dateOptions.push({
-                    label: `Last 7 Days (${comb7.length} dockets)`,
-                    value: 'last_7',
-                    count: comb7.length,
-                    numbers: comb7
+                    group: 'Custom Range',
+                    label: '📅 Custom Date Range (Pick Start & End Date)...',
+                    value: 'custom_range',
+                    is_custom: true
                 });
             }
 
-            const reversedDates = validDates.slice(-7).reverse();
+            // Single Specific Dates (up to 30 most recent dates)
+            const reversedDates = validDates.slice(-30).reverse();
             for (const d of reversedDates) {
                 if (d !== latestDate) {
                     dateOptions.push({
+                        group: 'Single Specific Dates',
                         label: `Date ${d} (${dateDockets[d].length} dockets)`,
                         value: d,
                         count: dateDockets[d].length,
@@ -758,7 +924,8 @@
                 trackon_numbers: courierType === 'trackon' ? defaultNumbers : [],
                 count: defaultNumbers.length,
                 all_numbers: allDockets,
-                date_dockets: dateDockets
+                date_dockets: dateDockets,
+                valid_dates: validDates
             };
         }
 
@@ -891,6 +1058,7 @@
                             const dList = dtdcDates[latestDate] || [];
                             const tList = trackonDates[latestDate] || [];
                             bothDateOptions.push({
+                                group: 'Preset Ranges',
                                 label: `Latest Date: ${latestDate} (${dList.length + tList.length} total: ${dList.length} DTDC + ${tList.length} Trackon)`,
                                 value: latestDate,
                                 count: dList.length + tList.length,
@@ -900,48 +1068,82 @@
                             });
                         }
 
-                        if (allDateKeys.length >= 2) {
-                            const last3 = allDateKeys.slice(-3);
-                            const dComb = [];
-                            const tComb = [];
-                            for (const d of last3) {
-                                dComb.push(...(dtdcDates[d] || []));
-                                tComb.push(...(trackonDates[d] || []));
+                        const presets = [
+                            { days: 3, label: 'Last 3 Days' },
+                            { days: 7, label: 'Last 7 Days (1 Week)' },
+                            { days: 10, label: 'Last 10 Days' },
+                            { days: 15, label: 'Last 15 Days (~2 Weeks)' },
+                            { days: 30, label: 'Last 30 Days (~1 Month)' },
+                            { days: 60, label: 'Last 60 Days (~2 Months)' }
+                        ];
+
+                        const seenBothCounts = new Set();
+                        if (latestDate) {
+                            const d0 = (dtdcDates[latestDate] || []).length;
+                            const t0 = (trackonDates[latestDate] || []).length;
+                            seenBothCounts.add(d0 + t0);
+                        }
+
+                        for (const p of presets) {
+                            if (allDateKeys.length >= 2) {
+                                const sliceDays = allDateKeys.slice(-p.days);
+                                if (sliceDays.length > 1) {
+                                    const dComb = [];
+                                    const tComb = [];
+                                    for (const d of sliceDays) {
+                                        dComb.push(...(dtdcDates[d] || []));
+                                        tComb.push(...(trackonDates[d] || []));
+                                    }
+                                    const totalComb = dComb.length + tComb.length;
+                                    if (!seenBothCounts.has(totalComb) || sliceDays.length < allDateKeys.length) {
+                                        seenBothCounts.add(totalComb);
+                                        bothDateOptions.push({
+                                            group: 'Preset Ranges',
+                                            label: `${p.label} (${totalComb} total: ${dComb.length} DTDC + ${tComb.length} Trackon, ${sliceDays.length} days)`,
+                                            value: `last_${p.days}`,
+                                            count: totalComb,
+                                            dtdc_numbers: dComb,
+                                            trackon_numbers: tComb,
+                                            numbers: [...dComb, ...tComb]
+                                        });
+                                    }
+                                }
                             }
+                        }
+
+                        // All Available Dates preset
+                        if (allDateKeys.length > 1) {
+                            const allDList = dtdcData.all_numbers || [];
+                            const allTList = trackonData.all_numbers || [];
                             bothDateOptions.push({
-                                label: `Last 3 Days (${dComb.length + tComb.length} total: ${dComb.length} DTDC + ${tComb.length} Trackon)`,
-                                value: 'last_3',
-                                count: dComb.length + tComb.length,
-                                dtdc_numbers: dComb,
-                                trackon_numbers: tComb,
-                                numbers: [...dComb, ...tComb]
+                                group: 'Preset Ranges',
+                                label: `All Available Dates in Workbook (${allDList.length + allTList.length} total: ${allDList.length} DTDC + ${allTList.length} Trackon, ${allDateKeys.length} days)`,
+                                value: 'all_dates',
+                                count: allDList.length + allTList.length,
+                                dtdc_numbers: allDList,
+                                trackon_numbers: allTList,
+                                numbers: [...allDList, ...allTList]
                             });
                         }
 
-                        if (allDateKeys.length >= 4) {
-                            const last7 = allDateKeys.slice(-7);
-                            const dComb = [];
-                            const tComb = [];
-                            for (const d of last7) {
-                                dComb.push(...(dtdcDates[d] || []));
-                                tComb.push(...(trackonDates[d] || []));
-                            }
+                        // Custom Date Range Option
+                        if (allDateKeys.length > 1) {
                             bothDateOptions.push({
-                                label: `Last 7 Days (${dComb.length + tComb.length} total: ${dComb.length} DTDC + ${tComb.length} Trackon)`,
-                                value: 'last_7',
-                                count: dComb.length + tComb.length,
-                                dtdc_numbers: dComb,
-                                trackon_numbers: tComb,
-                                numbers: [...dComb, ...tComb]
+                                group: 'Custom Range',
+                                label: '📅 Custom Date Range (Pick Start & End Date)...',
+                                value: 'custom_range',
+                                is_custom: true
                             });
                         }
 
-                        const reversedDates = allDateKeys.slice(-7).reverse();
+                        // Single Specific Dates (up to 30 most recent dates)
+                        const reversedDates = allDateKeys.slice(-30).reverse();
                         for (const d of reversedDates) {
                             if (d !== latestDate) {
                                 const dList = dtdcDates[d] || [];
                                 const tList = trackonDates[d] || [];
                                 bothDateOptions.push({
+                                    group: 'Single Specific Dates',
                                     label: `Date ${d} (${dList.length + tList.length} total: ${dList.length} DTDC + ${tList.length} Trackon)`,
                                     value: d,
                                     count: dList.length + tList.length,
@@ -960,7 +1162,10 @@
                             numbers: bothDateOptions.length > 0 ? bothDateOptions[0].numbers : [],
                             dtdc_numbers: bothDateOptions.length > 0 ? bothDateOptions[0].dtdc_numbers : [],
                             trackon_numbers: bothDateOptions.length > 0 ? bothDateOptions[0].trackon_numbers : [],
-                            count: bothDateOptions.length > 0 ? bothDateOptions[0].count : 0
+                            count: bothDateOptions.length > 0 ? bothDateOptions[0].count : 0,
+                            valid_dates: allDateKeys,
+                            dtdc_dates: dtdcDates,
+                            trackon_dates: trackonDates
                         };
                     }
 
