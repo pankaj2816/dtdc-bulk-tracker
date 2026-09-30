@@ -983,10 +983,15 @@ def export_excel():
 
                     for sname in target_sheets[:1]:
                         ws = wb[sname]
-                        status_col = 11
-                        edd_col = 12
-                        act_col = 13
-                        time_col = 14
+                        status_col = 13 if c_type == 'dtdc' else 11
+                        for c in range(1, 25):
+                            v = str(ws.cell(row=1, column=c).value or '').strip().lower()
+                            if v == 'live status':
+                                status_col = c
+                                break
+                        edd_col = status_col + 1
+                        act_col = status_col + 2
+                        time_col = status_col + 3
 
                         ws.cell(row=1, column=status_col, value="Live Status").fill = header_fill
                         ws.cell(row=1, column=status_col).font = header_font
@@ -1010,7 +1015,7 @@ def export_excel():
                                             docket_cell = cell
                                             break
                                     else:
-                                        if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', val_str, re.I):
+                                        if re.match(r'^[A-Z]{1,4}[0-9]{6,12}$', val_str, re.I) or (re.match(r'^[0-9]{10,12}$', val_str) and cell.column >= 5):
                                             row_docket = val_str.upper()
                                             docket_cell = cell
                                             break

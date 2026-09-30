@@ -664,7 +664,7 @@
                     }
 
                     if (courierType === 'dtdc') {
-                        if (dtdcPattern.test(cStr)) {
+                        if (dtdcPattern.test(cStr) || (/^[0-9]{10,12}$/.test(cStr) && c >= 4)) {
                             rowDockets.push(cStr.toUpperCase());
                         }
                     } else {
@@ -1410,11 +1410,6 @@
             const fillOfd = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
             const fillIssue = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
 
-            const statusCol = 11;
-            const eddCol = 12;
-            const actCol = 13;
-            const timeCol = 14;
-
             // Determine which sheets to merge into
             const targetSheets = [];
             if (currentCourier === 'both' || currentCourier === 'dtdc') {
@@ -1445,6 +1440,21 @@
                 bannerText.innerText = `⏳ Merging live tracking status into sheet "${ws.name}"...`;
                 await new Promise(r => setTimeout(r, 60));
 
+                // Dynamically detect safe status column:
+                // MIA-2 has party sub-notes, amounts, dimensions, and partner AWB in columns up to 12.
+                // Starting at Col 13 guarantees we NEVER overwrite remarks/dimensions!
+                let statusCol = (type === 'dtdc') ? 13 : 11;
+                for (let c = 1; c <= 25; c++) {
+                    const hVal = String(ws.getCell(1, c).value || '').trim().toLowerCase();
+                    if (hVal === 'live status') {
+                        statusCol = c;
+                        break;
+                    }
+                }
+                const eddCol = statusCol + 1;
+                const actCol = statusCol + 2;
+                const timeCol = statusCol + 3;
+
                 const hStatus = ws.getCell(1, statusCol);
                 hStatus.value = 'Live Status';
                 setCellStyle(hStatus, { fill: headerFill, font: headerFont });
@@ -1462,10 +1472,10 @@
                 setCellStyle(hTime, { fill: headerFill, font: headerFont });
 
                 // Ensure newly created columns have professional widths
-                ws.getColumn(statusCol).width = 22;
-                ws.getColumn(eddCol).width = 15;
-                ws.getColumn(actCol).width = 42;
-                ws.getColumn(timeCol).width = 20;
+                ws.getColumn(statusCol).width = 24;
+                ws.getColumn(eddCol).width = 16;
+                ws.getColumn(actCol).width = 44;
+                ws.getColumn(timeCol).width = 22;
 
                 let sheetMatched = 0;
 
@@ -1485,7 +1495,7 @@
                                     break;
                                 }
                             } else {
-                                if (/^[A-Za-z]{1,4}[0-9]{6,12}$/i.test(valStr)) {
+                                if (/^[A-Za-z]{1,4}[0-9]{6,12}$/i.test(valStr) || (/^[0-9]{10,12}$/.test(valStr) && colIdx >= 5)) {
                                     rowDocket = valStr.toUpperCase();
                                     docketCell = cell;
                                     break;
